@@ -32,7 +32,7 @@ jobs:
       - name: Test behavior
         run: npm test
       - name: Test image deployment validation and rollback
-        run: node --test deploy/self-hosted/deploy-image.test.mjs
+        run: node --test deploy/self-hosted/*.test.mjs
       - name: Check types
         run: npm run typecheck
       - name: Build production Worker
@@ -74,7 +74,8 @@ jobs:
           sha256sum outputs/release-image/image.tar.gz | cut -d ' ' -f 1 > outputs/release-image/image.tar.gz.sha256
           printf '%s\n' "$RELEASE_REVISION" > outputs/release-image/revision.txt
           printf '%s\n' "$image" > outputs/release-image/image-reference.txt
-          docker image inspect --format '{{.Id}}' "$image" > outputs/release-image/image-id.txt
+          observed_image_id=$(docker image inspect --format '{{.Id}}' "$image")
+          python3 deploy/self-hosted/verify-image-archive.py outputs/release-image/image.tar.gz "$image" "$observed_image_id" --metadata-dir outputs/release-image
           docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image" > outputs/release-image/platform.txt
           git archive --format=tar.gz --output=outputs/release-image/release-source.tar.gz "$RELEASE_REVISION"
           sha256sum outputs/release-image/release-source.tar.gz | cut -d ' ' -f 1 > outputs/release-image/release-source.tar.gz.sha256

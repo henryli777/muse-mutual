@@ -121,12 +121,14 @@ bash deploy/self-hosted/deploy-image.sh "$PWD" <完整提交SHA>
 curl -fsS https://muse.coinexo.top/api/invites?filter=all
 ```
 
-部署脚本使用排他锁，拒绝损坏归档、错误提交/平台或不匹配的镜像ID。Compose使用校验后的镜像ID，并显式禁用构建和拉取；健康检查成功后才原子切换 `current`。失败时恢复此前容器的确切镜像，数据库和WAL保持原位；前一版本和镜像ID记录在新版本的 `previous-release.txt`、`previous-image-id.txt`。`deploy-image.env` 记录已接受的镜像，日常重启使用：
+部署脚本使用排他锁，拒绝损坏归档、错误提交/平台或不匹配的镜像ID。经典 Docker 使用配置摘要，启用 containerd 的 Docker 使用清单摘要；CI 从镜像归档中核对引用、清单和配置之间的摘要关系，提供对应的 `image-manifest-id.txt`，部署只接受已核对的摘要。Compose使用本机校验后的不可变镜像ID，并显式禁用构建和拉取；健康检查成功后才原子切换 `current`。失败时恢复此前容器的确切镜像，数据库和WAL保持原位；前一版本和镜像ID记录在新版本的 `previous-release.txt`、`previous-image-id.txt`。`deploy-image.env` 记录已接受的镜像，日常重启使用：
 
 ```sh
 cd /opt/muse-mutual/current
 docker compose --env-file deploy-image.env -f deploy/self-hosted/compose.yaml up -d --no-build --pull never --wait
 ```
+
+若镜像已成功载入、部署在切换容器前中断，可以用 `MUSE_SKIP_IMAGE_LOAD=1` 重新运行部署脚本，避免再次载入大镜像。此选项仍执行归档校验、镜像摘要、版本、平台和健康检查；仅限复用这次已验证的镜像。
 
 首次配置使用 `nginx-http.conf`，执行 `nginx -t` 后重载；通过 `/var/www/letsencrypt` 签发证书，再使用 `nginx-https.conf`。普通HTTP请求重定向至HTTPS，ACME路径保持可达。Cloudflare代理可使用 Full (strict)；不要使用 Flexible。既有Certbot定时器负责续期。
 

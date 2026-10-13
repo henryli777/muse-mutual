@@ -28,10 +28,30 @@ checksum=$(cat "$release/image.tar.gz.sha256")
 [[ $revision == "$expected_revision" ]] || fail 'release revision does not match the requested revision'
 [[ $image == "muse-mutual:git-$expected_revision" ]] || fail 'image reference does not match the requested revision'
 [[ $expected_image_id =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'invalid image ID'
+expected_manifest_id=
+if [[ -e $release/image-manifest-id.txt || -L $release/image-manifest-id.txt ]]; then
+  [[ -f $release/image-manifest-id.txt && ! -L $release/image-manifest-id.txt ]] || fail 'invalid image manifest metadata file'
+  expected_manifest_id=$(cat "$release/image-manifest-id.txt")
+  [[ $expected_manifest_id =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'invalid image manifest ID'
+fi
 [[ $platform == linux/amd64 ]] || fail 'only the server platform linux/amd64 is accepted'
 [[ $checksum =~ ^[0-9a-f]{64}$ ]] || fail 'invalid archive checksum'
 actual_checksum=$(sha256sum "$release/image.tar.gz")
 [[ ${actual_checksum%% *} == "$checksum" ]] || fail 'image archive checksum does not match'
+if [[ -n $expected_manifest_id ]]; then
+  tooling_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+  archive_verifier=$tooling_directory/verify-image-archive.py
+  [[ -f $archive_verifier && ! -L $archive_verifier ]] || fail 'missing image archive identity verifier'
+  archive_identities=$(python3 "$archive_verifier" "$release/image.tar.gz" "$image" "$expected_image_id") || fail 'image archive identity validation failed'
+  if ! python3 - "$archive_identities" "$expected_image_id" "$expected_manifest_id" <<'PY'
+import json, sys
+identities = json.loads(sys.argv[1])
+sys.exit(0 if identities.get('configId') == sys.argv[2] and identities.get('manifestId') == sys.argv[3] else 1)
+PY
+  then
+    fail 'image archive identities do not match the release metadata'
+  fi
+fi
 
 # The lock also prevents two releases from racing the current symlink.
 exec 9>"$deploy_root/deploy.lock"
@@ -44,12 +64,18 @@ previous_image=$(docker container inspect --format '{{.Image}}' muse-mutual)
 previous_health=$(docker container inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' muse-mutual)
 [[ $previous_health == healthy ]] || fail 'the existing container must be healthy before upgrading'
 
-docker image load --input "$release/image.tar.gz"
+# Resuming a completed load avoids unpacking the same archive again on a shared
+# server. All archive, identity, revision and platform checks still run.
+if [[ ${MUSE_SKIP_IMAGE_LOAD:-} != 1 ]]; then
+  docker image load --input "$release/image.tar.gz"
+fi
 loaded_image_id=$(docker image inspect --format '{{.Id}}' "$image")
-[[ $loaded_image_id == "$expected_image_id" ]] || fail 'loaded image ID does not match the verified artifact'
-loaded_revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")
+# Classic Docker reports the config digest; the containerd image store reports
+# the manifest digest. CI derives both from the same saved archive.
+[[ $loaded_image_id == "$expected_image_id" || ( -n $expected_manifest_id && $loaded_image_id == "$expected_manifest_id" ) ]] || fail 'loaded image ID does not match the verified artifact'
+loaded_revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$loaded_image_id")
 [[ $loaded_revision == "$expected_revision" ]] || fail 'loaded image revision label does not match the requested revision'
-loaded_platform=$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image")
+loaded_platform=$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$loaded_image_id")
 [[ $loaded_platform == "$platform" ]] || fail 'loaded image platform does not match the server'
 
 update_current() {
@@ -90,11 +116,11 @@ trap 'exit 143' TERM
 printf '%s\n' "$previous_image" >"$release/previous-image-id.txt"
 printf '%s\n' "$previous_release" >"$release/previous-release.txt"
 rollout_started=1
-MUSE_IMAGE="$expected_image_id" docker compose -f "$compose" up -d --no-build --pull never --wait --wait-timeout 180
-printf 'MUSE_IMAGE=%s\n' "$expected_image_id" >"$release/deploy-image.env.tmp"
+MUSE_IMAGE="$loaded_image_id" docker compose -f "$compose" up -d --no-build --pull never --wait --wait-timeout 180
+printf 'MUSE_IMAGE=%s\n' "$loaded_image_id" >"$release/deploy-image.env.tmp"
 mv -f "$release/deploy-image.env.tmp" "$release/deploy-image.env"
 printf '%s\n' "$revision" >"$release/deployed-commit.txt.tmp"
 mv -f "$release/deployed-commit.txt.tmp" "$release/deployed-commit.txt"
 update_current "$release"
 rollout_started=0
-printf 'Deployed %s with image %s\n' "$revision" "$expected_image_id"
+printf 'Deployed %s with image %s\n' "$revision" "$loaded_image_id"
