@@ -1,13 +1,206 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import {fixture} from './helpers/sqlite-d1.ts';
-import {createInvite,getInvite,updateRemaining} from '../lib/server/invite-repository.ts';import {reserveClaim,confirmClaim,cancelClaim} from '../lib/server/claim-repository.ts';
-async function setup(remaining=3){const f=fixture();const invite=await createInvite(f.db,{code:'MUSE-test',nickname:'',remaining},'owner',f.now());return {...f,invite};}
-const op=()=>crypto.randomUUID();
-test('last_slot_has_one_winner',async()=>{const {db,invite}=await setup(1);const r=await Promise.allSettled(Array.from({length:20},(_,i)=>reserveClaim(db,{inviteId:invite.id,operationId:op(),visitorHash:'v'+i})));const win=r.filter(v=>v.status==='fulfilled');assert.equal(win.length,1);assert.equal((await getInvite(db,invite.id)).available,0);assert.equal((await getInvite(db,invite.id)).remaining,1);});
-test('confirm_once',async()=>{const {db,invite}=await setup(1);const id=op();await reserveClaim(db,{inviteId:invite.id,operationId:id,visitorHash:'v'});const rs=await Promise.all(Array.from({length:10},()=>confirmClaim(db,id,'v')));assert.equal(rs.filter(v=>v.counted).length,1);const v=await getInvite(db,invite.id);assert.equal(v.remaining,0);assert.equal(v.copiedCount,1);});
-test('failed_copy_cancel_does_not_consume or refund a confirmed copy',async()=>{const {db,invite}=await setup();const id=op();await reserveClaim(db,{inviteId:invite.id,operationId:id,visitorHash:'v'});await cancelClaim(db,id,'v');assert.equal((await getInvite(db,invite.id)).remaining,3);assert.equal((await getInvite(db,invite.id)).available,3);await assert.rejects(()=>confirmClaim(db,id,'v'),/过期|取消/);const b=op();await reserveClaim(db,{inviteId:invite.id,operationId:b,visitorHash:'v'});await confirmClaim(db,b,'v');await cancelClaim(db,b,'v');assert.equal((await getInvite(db,invite.id)).remaining,2);});
-test('expired_claim_releases_capacity and delayed confirm cannot revive it',async()=>{const {db,invite,advance}=await setup(1);const a=op(),b=op();await reserveClaim(db,{inviteId:invite.id,operationId:a,visitorHash:'a'});advance(91);await reserveClaim(db,{inviteId:invite.id,operationId:b,visitorHash:'b'});await assert.rejects(()=>confirmClaim(db,a,'a'),/过期/);await confirmClaim(db,b,'b');assert.equal((await getInvite(db,invite.id)).remaining,0);});
-test('same_visitor_ten_minutes_no_second_debit',async()=>{const {db,invite,advance}=await setup();const a=op();await reserveClaim(db,{inviteId:invite.id,operationId:a,visitorHash:'v'});await confirmClaim(db,a,'v');const b=await reserveClaim(db,{inviteId:invite.id,operationId:op(),visitorHash:'v'});assert.equal(b.alreadyCounted,true);await confirmClaim(db,b.operationId,'v');assert.equal((await getInvite(db,invite.id)).remaining,2);advance(601);const c=await reserveClaim(db,{inviteId:invite.id,operationId:op(),visitorHash:'v'});await confirmClaim(db,c.operationId,'v');assert.equal((await getInvite(db,invite.id)).remaining,1);});
-test('foreign_visitor_cannot_confirm or rebind operation id',async()=>{const {db,invite}=await setup();const id=op();await reserveClaim(db,{inviteId:invite.id,operationId:id,visitorHash:'owner'});await assert.rejects(()=>confirmClaim(db,id,'other'),/访客/);await assert.rejects(()=>reserveClaim(db,{inviteId:invite.id,operationId:id,visitorHash:'other'}),/访客/);});
-test('invalidate_during_reservation_blocks_confirmation even after restore',async()=>{const {db,sqlite,invite}=await setup();const id=op();await reserveClaim(db,{inviteId:invite.id,operationId:id,visitorHash:'v'});sqlite.prepare("UPDATE invites SET review_status='invalid',copy_revision=copy_revision+1 WHERE id=?").run(invite.id);await assert.rejects(()=>confirmClaim(db,id,'v'),/失效|过期/);sqlite.prepare("UPDATE invites SET review_status='normal' WHERE id=?").run(invite.id);await assert.rejects(()=>confirmClaim(db,id,'v'),/失效|过期/);assert.equal((await getInvite(db,invite.id)).remaining,3);});
-test('cross_tab_duplicate_does_not_hold_two_slots and owner cannot undercut',async()=>{const {db,invite}=await setup();const r=await Promise.all(Array.from({length:2},()=>reserveClaim(db,{inviteId:invite.id,operationId:op(),visitorHash:'v'})));assert.equal(r[0].operationId,r[1].operationId);assert.equal((await getInvite(db,invite.id)).available,2);await assert.rejects(()=>updateRemaining(db,invite.id,'owner',0,1800000000),/预留/);});
-test('same operation never extends its expiration',async()=>{const {db,invite,advance}=await setup();const id=op();const a=await reserveClaim(db,{inviteId:invite.id,operationId:id,visitorHash:'v'});advance(10);const b=await reserveClaim(db,{inviteId:invite.id,operationId:id,visitorHash:'v'});assert.equal(b.expiresAt,a.expiresAt);advance(81);await assert.rejects(()=>reserveClaim(db,{inviteId:invite.id,operationId:id,visitorHash:'v'}),/过期/);});
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { fixture } from "./helpers/sqlite-d1.ts";
+import {
+  createInvite,
+  getInvite,
+  updateRemaining,
+} from "../lib/server/invite-repository.ts";
+import {
+  reserveClaim,
+  confirmClaim,
+  cancelClaim,
+} from "../lib/server/claim-repository.ts";
+async function setup(remaining = 3) {
+  const f = fixture();
+  const invite = await createInvite(
+    f.db,
+    { code: "MUSE-test", nickname: "", remaining },
+    "owner",
+    f.now(),
+  );
+  return { ...f, invite };
+}
+const op = () => crypto.randomUUID();
+test("last_slot_has_one_winner", async () => {
+  const { db, invite } = await setup(1);
+  const r = await Promise.allSettled(
+    Array.from({ length: 20 }, (_, i) =>
+      reserveClaim(db, {
+        inviteId: invite.id,
+        operationId: op(),
+        visitorHash: "v" + i,
+      }),
+    ),
+  );
+  const win = r.filter((v) => v.status === "fulfilled");
+  assert.equal(win.length, 1);
+  assert.equal((await getInvite(db, invite.id)).available, 0);
+  assert.equal((await getInvite(db, invite.id)).remaining, 1);
+});
+test("confirm_once", async () => {
+  const { db, invite } = await setup(1);
+  const id = op();
+  await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: id,
+    visitorHash: "v",
+  });
+  const rs = await Promise.all(
+    Array.from({ length: 10 }, () => confirmClaim(db, id, "v")),
+  );
+  assert.equal(rs.filter((v) => v.counted).length, 1);
+  const v = await getInvite(db, invite.id);
+  assert.equal(v.remaining, 0);
+  assert.equal(v.copiedCount, 1);
+});
+test("failed_copy_cancel_does_not_consume or refund a confirmed copy", async () => {
+  const { db, invite } = await setup();
+  const id = op();
+  await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: id,
+    visitorHash: "v",
+  });
+  await cancelClaim(db, id, "v");
+  assert.equal((await getInvite(db, invite.id)).remaining, 3);
+  assert.equal((await getInvite(db, invite.id)).available, 3);
+  await assert.rejects(() => confirmClaim(db, id, "v"), /过期|取消/);
+  const b = op();
+  await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: b,
+    visitorHash: "v",
+  });
+  await confirmClaim(db, b, "v");
+  await cancelClaim(db, b, "v");
+  assert.equal((await getInvite(db, invite.id)).remaining, 2);
+});
+test("expired_claim_releases_capacity and delayed confirm cannot revive it", async () => {
+  const { db, invite, advance } = await setup(1);
+  const a = op(),
+    b = op();
+  await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: a,
+    visitorHash: "a",
+  });
+  advance(91);
+  await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: b,
+    visitorHash: "b",
+  });
+  await assert.rejects(() => confirmClaim(db, a, "a"), /过期/);
+  await confirmClaim(db, b, "b");
+  assert.equal((await getInvite(db, invite.id)).remaining, 0);
+});
+test("same_visitor_ten_minutes_no_second_debit", async () => {
+  const { db, invite, advance } = await setup();
+  const a = op();
+  await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: a,
+    visitorHash: "v",
+  });
+  await confirmClaim(db, a, "v");
+  const b = await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: op(),
+    visitorHash: "v",
+  });
+  assert.equal(b.alreadyCounted, true);
+  await confirmClaim(db, b.operationId, "v");
+  assert.equal((await getInvite(db, invite.id)).remaining, 2);
+  advance(601);
+  const c = await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: op(),
+    visitorHash: "v",
+  });
+  await confirmClaim(db, c.operationId, "v");
+  assert.equal((await getInvite(db, invite.id)).remaining, 1);
+});
+test("foreign_visitor_cannot_confirm or rebind operation id", async () => {
+  const { db, invite } = await setup();
+  const id = op();
+  await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: id,
+    visitorHash: "owner",
+  });
+  await assert.rejects(() => confirmClaim(db, id, "other"), /访客/);
+  await assert.rejects(
+    () =>
+      reserveClaim(db, {
+        inviteId: invite.id,
+        operationId: id,
+        visitorHash: "other",
+      }),
+    /访客/,
+  );
+});
+test("invalidate_during_reservation_blocks_confirmation even after restore", async () => {
+  const { db, sqlite, invite } = await setup();
+  const id = op();
+  await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: id,
+    visitorHash: "v",
+  });
+  sqlite
+    .prepare(
+      "UPDATE invites SET review_status='invalid',copy_revision=copy_revision+1 WHERE id=?",
+    )
+    .run(invite.id);
+  await assert.rejects(() => confirmClaim(db, id, "v"), /失效|过期/);
+  sqlite
+    .prepare("UPDATE invites SET review_status='normal' WHERE id=?")
+    .run(invite.id);
+  await assert.rejects(() => confirmClaim(db, id, "v"), /失效|过期/);
+  assert.equal((await getInvite(db, invite.id)).remaining, 3);
+});
+test("cross_tab_duplicate_does_not_hold_two_slots and owner cannot undercut", async () => {
+  const { db, invite } = await setup();
+  const r = await Promise.all(
+    Array.from({ length: 2 }, () =>
+      reserveClaim(db, {
+        inviteId: invite.id,
+        operationId: op(),
+        visitorHash: "v",
+      }),
+    ),
+  );
+  assert.equal(r[0].operationId, r[1].operationId);
+  assert.equal((await getInvite(db, invite.id)).available, 2);
+  await assert.rejects(
+    () => updateRemaining(db, invite.id, "owner", 0, 1800000000),
+    /预留/,
+  );
+});
+test("same operation never extends its expiration", async () => {
+  const { db, invite, advance } = await setup();
+  const id = op();
+  const a = await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: id,
+    visitorHash: "v",
+  });
+  advance(10);
+  const b = await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: id,
+    visitorHash: "v",
+  });
+  assert.equal(b.expiresAt, a.expiresAt);
+  advance(81);
+  await assert.rejects(
+    () =>
+      reserveClaim(db, {
+        inviteId: invite.id,
+        operationId: id,
+        visitorHash: "v",
+      }),
+    /过期/,
+  );
+});

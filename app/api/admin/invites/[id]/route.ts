@@ -1,3 +1,25 @@
-import {handle,requireAdmin} from '@/lib/server/route';import {json,readJson} from '@/lib/server/http';import {reviewInvite} from '@/lib/server/report-repository';import {AppError} from '@/lib/domain';
-export const dynamic='force-dynamic';
-export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){return handle(request,async({db,secret})=>{await requireAdmin(request,secret);const v=await readJson(request);if(v.action!=='invalidate'&&v.action!=='restore')throw new AppError(400,'invalid_action','请选择失效或恢复');const {id}=await params;return json({invite:await reviewInvite(db,id,v.action,Math.floor(Date.now()/1000))});});}
+import { handle, requireAdmin } from "@/lib/server/route";
+import { json, readJson } from "@/lib/server/http";
+import { reviewInvite } from "@/lib/server/report-repository";
+import { AppError } from "@/lib/domain";
+export const dynamic = "force-dynamic";
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  return handle(request, async ({ db, secret }) => {
+    await requireAdmin(request, secret);
+    const v = await readJson(request);
+    if (v.action !== "invalidate" && v.action !== "restore")
+      throw new AppError(400, "invalid_action", "请选择失效或恢复");
+    const { id } = await params;
+    return json({
+      invite: await reviewInvite(
+        db,
+        id,
+        v.action,
+        Math.floor(Date.now() / 1000),
+      ),
+    });
+  });
+}

@@ -1,11 +1,81 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';
-import {getVisitor,makeAdminCookie,isAdmin,hash} from '../lib/server/identity.ts';
-import {readJson,checkOrigin} from '../lib/server/http.ts';
-import {rateLimit} from '../lib/server/rate-limit.ts';import {fixture} from './helpers/sqlite-d1.ts';
-const origin='https://muse.test';const secret='test-only-secret';
-function req(cookie=''){return new Request(origin,{headers:{cookie}});}
-test('signed visitor cookie keeps identity across tabs but tampering cannot select an identity',async()=>{const a=await getVisitor(req(),secret);assert.ok(a.setCookie);const cookie=a.setCookie.split(';')[0];const b=await getVisitor(req(cookie),secret);assert.equal(a.hash,b.hash);const c=await getVisitor(req(cookie.slice(0,-1)+(cookie.endsWith('0')?'1':'0')),secret);assert.notEqual(a.hash,c.hash);assert.equal((await hash('hello')).length,64);});
-test('admin cookie is signed and rejected with the wrong secret',async()=>{const cookie=(await makeAdminCookie(req(),secret)).split(';')[0];assert.equal(await isAdmin(req(),secret),false);assert.equal(await isAdmin(req(cookie),secret),true);assert.equal(await isAdmin(req(cookie),'wrong'),false);});
-test('wrong_origin_rejected',()=>{assert.doesNotThrow(()=>checkOrigin(new Request(origin,{headers:{origin}})));for(const o of ['', 'https://evil.test'])assert.throws(()=>checkOrigin(new Request(origin,{headers:{origin:o}})),/来源/);});
-test('body_too_large_rejected and JSON types enforced',async()=>{await assert.rejects(()=>readJson(new Request(origin,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({note:'a'.repeat(9000)})})),/过大/);await assert.rejects(()=>readJson(new Request(origin,{method:'POST',body:'{}'})),/JSON/);assert.deepEqual(await readJson(new Request(origin,{method:'POST',headers:{'content-type':'application/json'},body:'{"code":"A"}'})),{code:'A'});});
-test('atomic rate window rejects the next call and permits next window',async()=>{const {db,advance}=fixture();await rateLimit(db,'visitor-share',2,3600);await rateLimit(db,'visitor-share',2,3600);advance(30);await assert.rejects(()=>rateLimit(db,'visitor-share',2,3600),/频繁/);advance(3600);await rateLimit(db,'visitor-share',2,3600);});
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  getVisitor,
+  makeAdminCookie,
+  isAdmin,
+  hash,
+} from "../lib/server/identity.ts";
+import { readJson, checkOrigin } from "../lib/server/http.ts";
+import { rateLimit } from "../lib/server/rate-limit.ts";
+import { fixture } from "./helpers/sqlite-d1.ts";
+const origin = "https://muse.test";
+const secret = "test-only-secret";
+function req(cookie = "") {
+  return new Request(origin, { headers: { cookie } });
+}
+test("signed visitor cookie keeps identity across tabs but tampering cannot select an identity", async () => {
+  const a = await getVisitor(req(), secret);
+  assert.ok(a.setCookie);
+  const cookie = a.setCookie.split(";")[0];
+  const b = await getVisitor(req(cookie), secret);
+  assert.equal(a.hash, b.hash);
+  const c = await getVisitor(
+    req(cookie.slice(0, -1) + (cookie.endsWith("0") ? "1" : "0")),
+    secret,
+  );
+  assert.notEqual(a.hash, c.hash);
+  assert.equal((await hash("hello")).length, 64);
+});
+test("admin cookie is signed and rejected with the wrong secret", async () => {
+  const cookie = (await makeAdminCookie(req(), secret)).split(";")[0];
+  assert.equal(await isAdmin(req(), secret), false);
+  assert.equal(await isAdmin(req(cookie), secret), true);
+  assert.equal(await isAdmin(req(cookie), "wrong"), false);
+});
+test("wrong_origin_rejected", () => {
+  assert.doesNotThrow(() =>
+    checkOrigin(new Request(origin, { headers: { origin } })),
+  );
+  for (const o of ["", "https://evil.test"])
+    assert.throws(
+      () => checkOrigin(new Request(origin, { headers: { origin: o } })),
+      /来源/,
+    );
+});
+test("body_too_large_rejected and JSON types enforced", async () => {
+  await assert.rejects(
+    () =>
+      readJson(
+        new Request(origin, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ note: "a".repeat(9000) }),
+        }),
+      ),
+    /过大/,
+  );
+  await assert.rejects(
+    () => readJson(new Request(origin, { method: "POST", body: "{}" })),
+    /JSON/,
+  );
+  assert.deepEqual(
+    await readJson(
+      new Request(origin, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: '{"code":"A"}',
+      }),
+    ),
+    { code: "A" },
+  );
+});
+test("atomic rate window rejects the next call and permits next window", async () => {
+  const { db, advance } = fixture();
+  await rateLimit(db, "visitor-share", 2, 3600);
+  await rateLimit(db, "visitor-share", 2, 3600);
+  advance(30);
+  await assert.rejects(() => rateLimit(db, "visitor-share", 2, 3600), /频繁/);
+  advance(3600);
+  await rateLimit(db, "visitor-share", 2, 3600);
+});

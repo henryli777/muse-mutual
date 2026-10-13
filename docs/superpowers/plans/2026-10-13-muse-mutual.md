@@ -58,11 +58,11 @@
 - `getVisitor(request): { id: string; hash: string; setCookie?: string }`；cookie 用服务端秘密签名，生产 Secure/HttpOnly/SameSite=Lax。
 - API：GET `/api/session` 初始化访客；GET `/api/invites` 列表；POST 分享返回 `{invite, ownerToken}`；PATCH `/api/invites/:id` 用请求头 `X-Owner-Token` 修改，不放 URL。
 
-- [ ] **Step 1: 建立隔离开发分支/工作区，复制 Sites Vinext 模板，注册一次 Site 并立即原子保存真实 project_id，启动唯一依赖安装。** 保留现有设计与计划文档；凭据仅会话内存/隐藏 stdin；正式实现等待依赖就绪。
-- [ ] **Step 2: 写失败测试。** `submission_boundaries`：默认 30，0/30 合法，-1/31/1.5/空白拒绝；`duplicate_code_keeps_original`：去首尾空白判重且大小写保留；`latest_uses_creation_time`：编辑不抬高排序；`owner_cannot_edit_other_record`：他人 token 返回403；`owner_cannot_undercut_reservations`：余量不能设为小于有效预留数；`public_dto_has_no_secrets`：没有哈希/ownerToken/反馈原文。
-- [ ] **Step 3: 运行 `node --experimental-strip-types --test tests/domain.test.ts tests/invites.test.ts`，确认失败来自缺失行为；实现迁移、仓储、cookie 与 API。** SQLite 测试适配器执行真实迁移与 prepare/batch SQL，batch 具有事务和回滚语义。限流使用数据库窗口计数：分享每访客每小时10次、领取每访客每分钟30次、反馈每访客每小时20次、管理员登录每来源每15分钟5次；过限返回429与 Retry-After。
-- [ ] **Step 4: 同命令验证全部通过，`npm run db:generate` 生成并检查迁移，`npx tsc --noEmit` 验证类型。** 索引覆盖邀请码唯一值、创建时间、预留有效期、访客/码/领取时间、反馈唯一值和限流窗口。
-- [ ] **Step 5: 仅提交本任务源码、迁移和测试，`git diff --cached --check` 后提交。**
+- [x] **Step 1: 建立隔离开发分支/工作区，复制 Sites Vinext 模板，注册一次 Site 并立即原子保存真实 project_id，启动唯一依赖安装。** 保留现有设计与计划文档；凭据仅会话内存/隐藏 stdin；正式实现等待依赖就绪。
+- [x] **Step 2: 写失败测试。** `submission_boundaries`：默认 30，0/30 合法，-1/31/1.5/空白拒绝；`duplicate_code_keeps_original`：去首尾空白判重且大小写保留；`latest_uses_creation_time`：编辑不抬高排序；`owner_cannot_edit_other_record`：他人 token 返回403；`owner_cannot_undercut_reservations`：余量不能设为小于有效预留数；`public_dto_has_no_secrets`：没有哈希/ownerToken/反馈原文。
+- [x] **Step 3: 运行 `node --experimental-strip-types --test tests/domain.test.ts tests/invites.test.ts`，确认失败来自缺失行为；实现迁移、仓储、cookie 与 API。** SQLite 测试适配器执行真实迁移与 prepare/batch SQL，batch 具有事务和回滚语义。限流使用数据库窗口计数：分享每访客每小时10次、领取每访客每分钟30次、反馈每访客每小时20次、管理员登录每来源每15分钟5次；过限返回429与 Retry-After。
+- [x] **Step 4: 同命令验证全部通过，`npm run db:generate` 生成并检查迁移，`npx tsc --noEmit` 验证类型。** 索引覆盖邀请码唯一值、创建时间、预留有效期、访客/码/领取时间、反馈唯一值和限流窗口。
+- [x] **Step 5: 仅提交本任务源码、迁移和测试，`git diff --cached --check` 后提交。**
 
 ### Task 2: Atomic reservation and exactly-once confirmation
 
@@ -74,11 +74,11 @@
 - `cancelClaim(db, operationId: string, visitorHash: string): Promise<void>`；取消确认过的操作不退款。
 - POST `/api/claims` 预留；PATCH `/api/claims/:operationId` body `{action: "confirm" | "cancel"}`；操作 ID 由浏览器 `crypto.randomUUID()` 生成，同一次领取重试保持不变。
 
-- [ ] **Step 1: 写失败测试。** `last_slot_has_one_winner`：20个访客抢余量1最多一个有效预留；`confirm_once`：确认10次只减1；`failed_copy_cancel_does_not_consume`：取消后余量原值；`expired_claim_releases_capacity`：90秒后另一个可领取且旧确认409；`same_visitor_ten_minutes_no_second_debit`：同cookie不同操作 ID不再扣；`foreign_visitor_cannot_confirm`：403；`invalidate_during_reservation_blocks_confirmation`：409且不扣；`cross_tab_duplicate_does_not_hold_two_slots`：同设备并发不多占名额。
-- [ ] **Step 2: 运行 `node --experimental-strip-types --test tests/claims.test.ts`，确认失败后实现仓储。** 预留通过条件 `INSERT ... SELECT` 原子检查：记录未失效、未存在本设备有效预留/近期确认、`remaining > count(active reservations)`。有效预留不改变 remaining。有效性判断使用 SQL `unixepoch('now')`，不能用请求开始时保存的旧时间；测试适配器可控制数据库时间。每个 `prepare()` 只有一条 SQL，禁止跨多个请求裸 SELECT 再 UPDATE。
-- [ ] **Step 3: 实现三语句原子确认及持久幂等记录。** 同一个 D1 `batch()`：①将匹配访客/操作/邀请码及copyRevision、仍有效且记录未失效的 reserved 操作改为暂态 confirming；②仅当这个操作为 confirming 时，邀请码 remaining 减1、copiedCount加1；③将这个操作 confirming 改为confirmed并记录数据库时间。整批失败全部回滚，事务外永不暴露confirming，重试不能再次消耗；CHECK 防止负余量。操作ID永久绑定原访客、邀请码及预留版本，重试不刷新到期时间；取消/过期操作不能重新确认。重复领取返回该访客原有近期确认操作；全局唯一邀请码不能通过重复建行绕过10分钟判重。有效预留只统计版本仍匹配的记录；更新余量时原子拒绝小于有效预留数量的输入。
-- [ ] **Step 4: 运行全部 domain/invite/claim 测试，构建 Worker并应用未执行的本地迁移。** `scripts/check-api.mjs` 使用真实本地 Worker 创建独立测试邀请码并发领取验证最后一席；仅在本地测试库运行，测试记录使用明显前缀。
-- [ ] **Step 5: 检查差异并提交，记录实际测试结果。**
+- [x] **Step 1: 写失败测试。** `last_slot_has_one_winner`：20个访客抢余量1最多一个有效预留；`confirm_once`：确认10次只减1；`failed_copy_cancel_does_not_consume`：取消后余量原值；`expired_claim_releases_capacity`：90秒后另一个可领取且旧确认409；`same_visitor_ten_minutes_no_second_debit`：同cookie不同操作 ID不再扣；`foreign_visitor_cannot_confirm`：403；`invalidate_during_reservation_blocks_confirmation`：409且不扣；`cross_tab_duplicate_does_not_hold_two_slots`：同设备并发不多占名额。
+- [x] **Step 2: 运行 `node --experimental-strip-types --test tests/claims.test.ts`，确认失败后实现仓储。** 预留通过条件 `INSERT ... SELECT` 原子检查：记录未失效、未存在本设备有效预留/近期确认、`remaining > count(active reservations)`。有效预留不改变 remaining。有效性判断使用 SQL `unixepoch('now')`，不能用请求开始时保存的旧时间；测试适配器可控制数据库时间。每个 `prepare()` 只有一条 SQL，禁止跨多个请求裸 SELECT 再 UPDATE。
+- [x] **Step 3: 实现三语句原子确认及持久幂等记录。** 同一个 D1 `batch()`：①将匹配访客/操作/邀请码及copyRevision、仍有效且记录未失效的 reserved 操作改为暂态 confirming；②仅当这个操作为 confirming 时，邀请码 remaining 减1、copiedCount加1；③将这个操作 confirming 改为confirmed并记录数据库时间。整批失败全部回滚，事务外永不暴露confirming，重试不能再次消耗；CHECK 防止负余量。操作ID永久绑定原访客、邀请码及预留版本，重试不刷新到期时间；取消/过期操作不能重新确认。重复领取返回该访客原有近期确认操作；全局唯一邀请码不能通过重复建行绕过10分钟判重。有效预留只统计版本仍匹配的记录；更新余量时原子拒绝小于有效预留数量的输入。
+- [x] **Step 4: 运行全部 domain/invite/claim 测试，构建 Worker并应用未执行的本地迁移。** `scripts/check-api.mjs` 使用真实本地 Worker 创建独立测试邀请码并发领取验证最后一席；仅在本地测试库运行，测试记录使用明显前缀。
+- [x] **Step 5: 检查差异并提交，记录实际测试结果。**
 
 ### Task 3: Community reports and protected moderation
 
@@ -90,11 +90,11 @@
 - POST `/api/reports` 返回最新公开 DTO；POST `/api/admin/session` 登录、DELETE退出；GET `/api/admin/reports` 返回需认证的原始说明；PATCH `/api/admin/invites/:id` `{action}`。
 - 管理员秘密 `MUSE_ADMIN_TOKEN`、cookie 签名秘密 `MUSE_SESSION_SECRET` 由秘密配置提供；登录后短期8小时HttpOnly会话。保留 Sites 认证集成，不新增 OAuth。
 
-- [ ] **Step 1: 写失败测试。** `single_report_only_pending`：一次反馈不关闭领取；`repeat_report_no_inflation`：同设备同码仅一条；`private_notes_not_public`：公开列表仅原因与数量；`anonymous_moderation_rejected`：401；`owner_cannot_clear_reports`：仍pending；`restore_preserves_counts`：恢复不改变余量和创建时间；`wrong_origin_rejected`：403；`body_too_large_rejected`：413。
-- [ ] **Step 2: 运行 `node --experimental-strip-types --test tests/reports.test.ts`，确认失败后实现投诉及审核。** 原文仅管理员能查看；管理员会话秘密缺失时审核入口关闭并给出配置提示；错误响应不泄露数据库或秘密。
-- [ ] **Step 3: 构建简洁审核页面。** 登录、待核实列表、反馈原文、标记失效/恢复、退出；管理员页面不加入捐款 UI。
-- [ ] **Step 4: 运行全部仓储和权限测试、`npx tsc --noEmit`；检查未经授权和跨来源请求都失败。**
-- [ ] **Step 5: 提交源码和 key 名称示例，不提交真实值。**
+- [x] **Step 1: 写失败测试。** `single_report_only_pending`：一次反馈不关闭领取；`repeat_report_no_inflation`：同设备同码仅一条；`private_notes_not_public`：公开列表仅原因与数量；`anonymous_moderation_rejected`：401；`owner_cannot_clear_reports`：仍pending；`restore_preserves_counts`：恢复不改变余量和创建时间；`wrong_origin_rejected`：403；`body_too_large_rejected`：413。
+- [x] **Step 2: 运行 `node --experimental-strip-types --test tests/reports.test.ts`，确认失败后实现投诉及审核。** 原文仅管理员能查看；管理员会话秘密缺失时审核入口关闭并给出配置提示；错误响应不泄露数据库或秘密。
+- [x] **Step 3: 构建简洁审核页面。** 登录、待核实列表、反馈原文、标记失效/恢复、退出；管理员页面不加入捐款 UI。
+- [x] **Step 4: 运行全部仓储和权限测试、`npx tsc --noEmit`；检查未经授权和跨来源请求都失败。**
+- [x] **Step 5: 提交源码和 key 名称示例，不提交真实值。**
 
 ### Task 4: Responsive sharing board and resilient clipboard flow
 
@@ -102,11 +102,11 @@
 
 **Interfaces:** `copyInvite({ inviteId, api, clipboard, storage, now }): Promise<{ status: "confirmed" | "pending" | "cancelled" | "needs_click"; invite?: InviteView }>`；依赖可注入测试，状态变更驱动卡片按钮与 live region。API 使用前述 DTO，不在客户端推断服务端最终余量。
 
-- [ ] **Step 1: 写失败的交互协调器测试。** `clipboard_failure_cancels`：失败发取消且没有确认；`confirmation_network_failure_stays_pending`：剪贴板成功后断网保存操作ID、提示同步中，重试同ID；`two_tabs_same_cookie`：与后端近期判重一致；`expired_pending_does_not_retry_new_claim`：旧预留过期给出明确提示，不自动再次领取。
-- [ ] **Step 2: 运行 `node --experimental-strip-types --test tests/copy.test.ts`，确认失败后实现复制流程。** 支持 ClipboardItem 的浏览器在原始点击同步发起带 Promise<Blob> 的剪贴板写入，内容等待服务端预留；需要再次激活的浏览器改为明确第二次点击「名额已预留，点击复制」。失败取消，确认断网保存并重试；兼容能力不足时显示具体操作提示。若剪贴板已成功但断网直至预留过期，提示「已复制，预留已过期，次数未同步，请以 MUSE 实际使用结果为准」，不自动创建新领取或复活旧预留。网站无法由服务端证明系统剪贴板操作成功，这仍是本站确认记录估算。
-- [ ] **Step 3: 实现完整首页。** 顶部标题、表单默认30、最新/剩余排序与过滤、空状态、刷新/错误状态、完整日期、余量及审核标识、使用说明、头尾支持链接。时间在客户端本地化，避免服务器时区及 hydration 差异。记录本设备 ownerToken 以提供「修改余量」，本地凭据丢失时说明只能由运营者维护。
-- [ ] **Step 4: 在本地预览验证桌面与手机。** 两个浏览器环境共享提交与扣减；表单、筛选、复制成功与失败、反馈、修改余量、审核、零次数禁用；昵称/反馈包含 HTML 时作为文字展示；键盘焦点、弹窗关闭、live region 与窄屏无溢出。
-- [ ] **Step 5: 运行全部行为测试、类型检查和生产构建，提交已验证前端。** 不为纯配色和间距编写实现镜像测试。
+- [x] **Step 1: 写失败的交互协调器测试。** `clipboard_failure_cancels`：失败发取消且没有确认；`confirmation_network_failure_stays_pending`：剪贴板成功后断网保存操作ID、提示同步中，重试同ID；`two_tabs_same_cookie`：与后端近期判重一致；`expired_pending_does_not_retry_new_claim`：旧预留过期给出明确提示，不自动再次领取。
+- [x] **Step 2: 运行 `node --experimental-strip-types --test tests/copy.test.ts`，确认失败后实现复制流程。** 支持 ClipboardItem 的浏览器在原始点击同步发起带 Promise<Blob> 的剪贴板写入，内容等待服务端预留；需要再次激活的浏览器改为明确第二次点击「名额已预留，点击复制」。失败取消，确认断网保存并重试；兼容能力不足时显示具体操作提示。若剪贴板已成功但断网直至预留过期，提示「已复制，预留已过期，次数未同步，请以 MUSE 实际使用结果为准」，不自动创建新领取或复活旧预留。网站无法由服务端证明系统剪贴板操作成功，这仍是本站确认记录估算。
+- [x] **Step 3: 实现完整首页。** 顶部标题、表单默认30、最新/剩余排序与过滤、空状态、刷新/错误状态、完整日期、余量及审核标识、使用说明、头尾支持链接。时间在客户端本地化，避免服务器时区及 hydration 差异。记录本设备 ownerToken 以提供「修改余量」，本地凭据丢失时说明只能由运营者维护。
+- [x] **Step 4: 在本地预览验证桌面与手机。** 两个浏览器环境共享提交与扣减；表单、筛选、复制成功与失败、反馈、修改余量、审核、零次数禁用；昵称/反馈包含 HTML 时作为文字展示；键盘焦点、弹窗关闭、live region 与窄屏无溢出。
+- [x] **Step 5: 运行全部行为测试、类型检查和生产构建，提交已验证前端。** 不为纯配色和间距编写实现镜像测试。
 
 ### Task 5: Release, public source and production verification
 
@@ -128,4 +128,4 @@
 
 执行建议：**Native（由主代理直接实施，各阶段按计划验证，结束时独立审查）**。仓储和接口关联较紧，统一实施可减少交接；独立代理用于协议/审查等不共享编辑状态的任务。
 
-当前状态：计划已写入并自查，等待用户确认计划及执行方式后开始产品开发；尚未安装产品依赖、注册 Site 或创建远端仓库。
+当前状态：用户已确认计划并选择 Native。Tasks 1–4 已实现并验证，Task 5 正在进行独立审查与公开发布。
