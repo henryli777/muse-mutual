@@ -16,6 +16,7 @@ export interface CopyStorage {
 }
 export interface CopyResult {
   status: "confirmed" | "pending" | "cancelled" | "needs_click" | "expired";
+  operationId?: string;
   invite?: InviteView;
   counted?: boolean;
   pending?: Pending;
@@ -45,7 +46,7 @@ export async function retryPending({
   try {
     const out = await api.confirm(pending.operationId);
     remove(storage, pending.operationId);
-    return { status: "confirmed", ...out };
+    return { status: "confirmed", operationId: pending.operationId, ...out };
   } catch (e) {
     const status = (e as { status?: number }).status;
     if (status && status >= 400 && status < 500 && status !== 429) {

@@ -742,6 +742,86 @@ legend {
   align-items: center;
   margin-top: 7px;
 }
+.usage-summary {
+  margin-top: 8px;
+  color: #7d8b70;
+  font-size: 10px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.usage-summary .usage-counts {
+  color: #5d7850;
+}
+.usage-summary .stale-feedback {
+  color: #a28442;
+}
+.usage-feedback {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #dce8d2;
+  border-radius: 9px;
+  background: #f6f8f0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #5b7350;
+}
+.usage-feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.usage-feedback-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 38px;
+  flex: 1;
+  padding: 7px 9px;
+  color: #416437;
+  border: 1px solid #d6e3cc;
+  border-radius: 7px;
+  background: #fffefb;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.usage-feedback-actions button:hover:not(:disabled) {
+  background: #edf3e7;
+}
+.usage-feedback small {
+  display: block;
+  margin-top: 8px;
+  color: #8b815e;
+  font-size: 10px;
+}
+.usage-feedback .usage-feedback-error {
+  margin-top: 8px;
+  color: #9b663a;
+  overflow-wrap: anywhere;
+}
+.usage-feedback.recorded {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.usage-feedback.recorded svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.recent-claims {
+  margin: 18px 0 26px;
+}
+.recent-claims > h3 {
+  font-size: 15px;
+  font-weight: 550;
+}
+.recent-claims > p {
+  font-size: 11px;
+  color: #8a947e;
+  line-height: 1.8;
+  margin: 6px 0 14px;
+}
 .copy-button {
   width: 100%;
   display: flex;

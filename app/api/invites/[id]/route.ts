@@ -1,9 +1,18 @@
 import { handle } from "@/lib/server/route";
 import { json, readJson } from "@/lib/server/http";
 import { hash } from "@/lib/server/identity";
-import { updateRemaining } from "@/lib/server/invite-repository";
+import { getInvite, updateRemaining } from "@/lib/server/invite-repository";
 import { validateRemaining, AppError } from "@/lib/domain";
 export const dynamic = "force-dynamic";
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  return handle(request, async ({ db }) => {
+    const { id } = await params;
+    return json({ invite: await getInvite(db, id) });
+  });
+}
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },

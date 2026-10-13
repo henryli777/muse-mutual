@@ -83,6 +83,26 @@ export const reports = sqliteTable(
     ),
   ],
 );
+export const usageFeedback = sqliteTable(
+  "usage_feedback",
+  {
+    id: text("id").primaryKey(),
+    operationId: text("operation_id")
+      .notNull()
+      .references(() => claims.operationId),
+    inviteId: text("invite_id")
+      .notNull()
+      .references(() => invites.id),
+    copyRevision: integer("copy_revision").notNull(),
+    outcome: text("outcome").notNull(),
+    recordedAt: integer("recorded_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("usage_feedback_operation").on(t.operationId),
+    index("usage_feedback_invite").on(t.inviteId, t.copyRevision, t.outcome, t.recordedAt),
+    check("usage_outcomes", sql`${t.outcome} IN ('success','failure')`),
+  ],
+);
 export const rateLimits = sqliteTable(
   "rate_limits",
   {

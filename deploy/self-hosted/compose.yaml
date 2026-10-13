@@ -2,7 +2,7 @@ name: muse-mutual
 
 services:
   muse:
-    image: muse-mutual:selfhost
+    image: ${MUSE_IMAGE:-muse-mutual:selfhost}
     container_name: muse-mutual
     build:
       context: ../..

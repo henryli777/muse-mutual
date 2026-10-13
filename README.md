@@ -12,7 +12,8 @@
 1. 填写邀请码、当前预计剩余次数和可选昵称。次数默认 30，可填写 0–30 的整数；提交时间由服务器自动记录。
 2. 在邀请码广场按最新分享或剩余次数浏览，也可筛选可领取、待核实、已用完等状态。
 3. 点击「复制领取」，到 MUSE 使用邀请码。成功复制并经服务器确认后，本站预计余量扣减一次。
-4. 遇到失效或错误时点击「反馈问题」。反馈先标记为「待核实」，由运营者决定是否停用或恢复。
+4. 在 MUSE 使用后，可在本次领取的七天内反馈「使用成功」或「未能使用」。成功反馈展示使用者提供的最近验证时间；失败反馈先标记为「待核实」，由运营者决定是否停用或恢复。反馈不会再次扣减次数。
+5. 「你最近领取的」保留最多20条本浏览器的近期领取记录；已用完或不在当前分类中的记录仍可反馈。重复提交同一领取的同一结果只记录一次，结果确认后不能更换。
 
 **预计剩余次数并非 MUSE 官方兑换结果。** 它根据分享者填写的余量和本站确认的复制记录估算。网站无法观察 MUSE 实际使用、站外复制或手动选择文字复制，实际可用次数以 MUSE 为准；30 也不是经官方验证的总额度。
 
@@ -22,7 +23,7 @@
 
 ## 技术与结构
 
-使用 TypeScript、React、Vinext 和 Drizzle 迁移。正式部署运行在 Node.js + 持久 SQLite，保留 Cloudflare Workers/D1 构建选项。邀请码、预留、反馈与限流记录保存在服务器数据库；本浏览器仅保存提交管理凭据与待同步操作。首页适配手机和桌面，公开页面提供持续可见的「支持项目」入口。
+使用 TypeScript、React、Vinext 和 Drizzle 迁移。正式部署运行在 Node.js + 持久 SQLite，保留 Cloudflare Workers/D1 构建选项。邀请码、预留、反馈与限流记录保存在服务器数据库；本浏览器保存提交管理凭据、待同步操作及近期领取的反馈状态。首页适配手机和桌面，公开页面提供持续可见的「支持项目」入口。
 
 - `app/`：页面和同源 API；`app/admin/` 为维护入口。
 - `components/`：分享表单、邀请码卡片、反馈弹窗与维护界面。
@@ -96,20 +97,40 @@ node scripts/check-api.mjs http://127.0.0.1:5173
 - 私密配置：`/opt/muse-mutual/secrets.env`，仅包含运行时秘密，不打入镜像。管理员凭据与原站相同。
 - 数据库启动迁移：只执行未应用的结构迁移，记录校验和并拒绝改写已应用迁移。
 - 备份：`deploy/self-hosted/backup.sh` 使用 SQLite 一致快照并校验完整性，保存至持久卷的 `backups/`。`muse-backup.timer` 每天北京时间约03:15运行（随机延迟最多15分钟）；不会自动删除旧备份。
+- 异机备份：`scripts/offsite-backup.mjs` 通过既有SSH连接拉取新的完整快照，校验SHA256及SQLite完整性后私密保存。当前目的地是 Henry 的 Mac，每天北京时间03:45拉取，睡眠错过时会在唤醒后运行；Mac须在线并能连接服务器。配置、恢复步骤见[异机备份说明](docs/offsite-backup.md)。
 
-构建、启动和检查：
+正式升级使用 CI 预构建镜像，服务器只执行校验、载入和健康检查，不安装依赖或编译。GitHub Actions 的 Node.js 22、24 验证全部通过后，主分支才构建一次 `linux/amd64` 镜像；artifact 名称为 `muse-linux-amd64-<完整提交SHA>`，保留14天，包含压缩镜像、精确源码、SHA-256校验值、镜像ID和OCI版本标识。下载使用现有 GitHub CLI 登录，不需要把 GitHub 凭据或生产秘密传到服务器。
+
+在已登录 `gh` 的本地电脑选定一次成功的主分支运行并下载：
+
+```sh
+release_run=123456789 # 替换为成功的 CI 运行ID
+release_revision=$(gh run view "$release_run" --repo henryli777/muse-mutual --json headSha --jq .headSha)
+release_bundle="outputs/release-$release_revision"
+gh run download "$release_run" --repo henryli777/muse-mutual --name "muse-linux-amd64-$release_revision" --dir "$release_bundle"
+cd "$release_bundle"
+printf '%s  %s\n' "$(cat release-source.tar.gz.sha256)" release-source.tar.gz | sha256sum -c -
+printf '%s  %s\n' "$(cat image.tar.gz.sha256)" image.tar.gz | sha256sum -c -
+```
+
+把经过校验的包传至服务器的新版本目录，将 `release-source.tar.gz` 解压在该目录根部，保留镜像和各校验/版本文件。确认 `/opt/muse-mutual/current` 仍指向健康的现有版本，并先创建数据库备份。随后在服务器执行：
 
 ```sh
 cd /opt/muse-mutual/releases/<release>
-# 先准备 secrets.env，并将 state 目录权限设为1000:1000、0700。
-docker compose -f deploy/self-hosted/compose.yaml up --build -d --wait
-ln -sfn /opt/muse-mutual/releases/<release> /opt/muse-mutual/current
+bash deploy/self-hosted/deploy-image.sh "$PWD" <完整提交SHA>
 curl -fsS https://muse.coinexo.top/api/invites?filter=all
+```
+
+部署脚本使用排他锁，拒绝损坏归档、错误提交/平台或不匹配的镜像ID。Compose使用校验后的镜像ID，并显式禁用构建和拉取；健康检查成功后才原子切换 `current`。失败时恢复此前容器的确切镜像，数据库和WAL保持原位；前一版本和镜像ID记录在新版本的 `previous-release.txt`、`previous-image-id.txt`。`deploy-image.env` 记录已接受的镜像，日常重启使用：
+
+```sh
+cd /opt/muse-mutual/current
+docker compose --env-file deploy-image.env -f deploy/self-hosted/compose.yaml up -d --no-build --pull never --wait
 ```
 
 首次配置使用 `nginx-http.conf`，执行 `nginx -t` 后重载；通过 `/var/www/letsencrypt` 签发证书，再使用 `nginx-https.conf`。普通HTTP请求重定向至HTTPS，ACME路径保持可达。Cloudflare代理可使用 Full (strict)；不要使用 Flexible。既有Certbot定时器负责续期。
 
-升级和回滚使用新的/旧的版本目录运行同一Compose命令，随后切换 `current`；共享数据库不会被替换。恢复数据库时先停止MUSE容器，备份当前数据库及WAL文件，再恢复经校验的备份，设置1000:1000、0600权限后重新启动。不要将本地测试数据库上传至生产。
+已接受版本需要人工回滚时，先核对前一镜像仍在本机、数据库变更与旧应用兼容，再将 `MUSE_IMAGE` 设为记录的前一镜像ID，用同一Compose配置执行 `up -d --no-build --pull never --wait`，成功后切回记录的前一版本目录。发布迁移应保持向后兼容；镜像回滚不会撤销已执行的迁移。恢复数据库时先停止MUSE容器，备份当前数据库及WAL文件，再恢复经校验的备份，设置1000:1000、0600权限后重新启动。不要将本地测试数据库上传至生产，也不要在确认回滚窗口结束前清理旧镜像。
 
 本地验证自托管构建：
 
@@ -126,7 +147,7 @@ Cloudflare 版本使用 Sites 托管，`.openai/hosting.json` 声明现有 Site 
 
 Sites 源码远端由其官方 helper 管理，公开 GitHub 仓库使用独立的 `github` remote。不要把源码写入凭据、运行时数据或本地秘密推送到任何远端。该应用需要持久数据库和服务端 API，不能直接作为纯静态 GitHub Pages 网站运行。
 
-GitHub Actions 在 Node.js 22、24 下执行锁定依赖安装、行为测试、类型检查，以及Worker和自托管两种生产构建；CI 不需要生产秘密，也不修改生产数据库。
+GitHub Actions 在 Node.js 22、24 下执行锁定依赖安装、行为测试、镜像部署校验/回滚测试、类型检查，以及Worker和自托管两种生产构建；验证通过的主分支额外生成可部署镜像artifact。CI 不需要生产秘密，也不修改生产数据库。
 
 ## 设计与许可
 

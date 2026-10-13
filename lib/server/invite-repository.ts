@@ -35,7 +35,10 @@ export const ACTIVE = `(SELECT count(*) FROM claims c WHERE c.invite_id=i.id AND
 const SELECT = `SELECT i.id,i.code,i.nickname,i.remaining,i.copied_count,i.created_at,i.updated_at,i.review_status,
  i.remaining-${ACTIVE} AS available,
  (SELECT count(*) FROM reports r WHERE r.invite_id=i.id AND r.resolved=0) AS report_count,
- (SELECT group_concat(DISTINCT reason) FROM reports r WHERE r.invite_id=i.id AND r.resolved=0) AS report_reasons FROM invites i`;
+ (SELECT group_concat(DISTINCT reason) FROM reports r WHERE r.invite_id=i.id AND r.resolved=0) AS report_reasons,
+ (SELECT max(recorded_at) FROM usage_feedback f WHERE f.invite_id=i.id AND f.copy_revision=i.copy_revision AND f.outcome='success') AS last_verified_at,
+ (SELECT count(*) FROM usage_feedback f WHERE f.invite_id=i.id AND f.copy_revision=i.copy_revision AND f.outcome='success') AS success_count,
+ (SELECT count(*) FROM usage_feedback f WHERE f.invite_id=i.id AND f.copy_revision=i.copy_revision AND f.outcome='failure') AS failure_count FROM invites i`;
 function view(r: Row): InviteView {
   return {
     id: r.id,
@@ -51,6 +54,9 @@ function view(r: Row): InviteView {
     reportReasons: r.report_reasons
       ? (r.report_reasons.split(",") as ReportReason[])
       : [],
+    lastVerifiedAt: r.last_verified_at === null ? null : new Date(r.last_verified_at * 1000).toISOString(),
+    successCount: r.success_count,
+    failureCount: r.failure_count,
   };
 }
 export async function getInvite(

@@ -30,6 +30,8 @@ export default function InviteCard({
   busy,
   message,
   copyLabel,
+  usageFeedback,
+  checkedAt,
 }: {
   invite: InviteView;
   ownerToken?: string;
@@ -39,6 +41,8 @@ export default function InviteCard({
   busy: boolean;
   message?: string;
   copyLabel?: string;
+  usageFeedback?: React.ReactNode;
+  checkedAt: number;
 }) {
   const state = inviteStatus(invite),
     { Icon, label } = statuses[state];
@@ -114,6 +118,33 @@ export default function InviteCard({
           })}
         </p>
       )}
+      <div className="usage-summary">
+        <p>
+          {invite.lastVerifiedAt ? (
+            <>
+              最近验证（使用者反馈）：
+              <time dateTime={invite.lastVerifiedAt}>
+                {new Date(invite.lastVerifiedAt).toLocaleString("zh-CN", {
+                  hour12: false,
+                })}
+              </time>
+            </>
+          ) : (
+            "最近验证：尚无使用成功反馈"
+          )}
+        </p>
+        {(invite.successCount > 0 || invite.failureCount > 0) && (
+          <p className="usage-counts">
+            使用成功 {invite.successCount} · 未能使用 {invite.failureCount}
+          </p>
+        )}
+        {invite.lastVerifiedAt &&
+          checkedAt - Date.parse(invite.lastVerifiedAt) > 7 * 86400000 && (
+            <p className="stale-feedback">
+              成功反馈已超过 7 天，实际请以 MUSE 为准。
+            </p>
+          )}
+      </div>
       {invite.reportCount > 0 && (
         <p className="feedback-note">
           <Flag size={12} />
@@ -198,6 +229,7 @@ export default function InviteCard({
           {message}
         </p>
       )}
+      {usageFeedback}
     </article>
   );
 }

@@ -1,5 +1,15 @@
 export type ReviewStatus = "normal" | "pending" | "invalid";
 export type ReportReason = "expired" | "incorrect" | "other";
+export type UsageOutcome = "success" | "failure";
+export interface UsageFeedbackInput {
+  outcome: UsageOutcome;
+  reason?: ReportReason;
+  note?: string;
+}
+export interface UsageFeedbackView {
+  outcome: UsageOutcome;
+  recordedAt: string;
+}
 export interface InviteView {
   id: string;
   code: string;
@@ -12,6 +22,9 @@ export interface InviteView {
   reviewStatus: ReviewStatus;
   reportCount: number;
   reportReasons: ReportReason[];
+  lastVerifiedAt: string | null;
+  successCount: number;
+  failureCount: number;
 }
 export interface Submission {
   code: string;
@@ -26,6 +39,24 @@ export class AppError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+export function validateUsageFeedback(value: unknown): UsageFeedbackInput {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new AppError(400, "invalid_input", "请选择使用结果");
+  const v = value as Record<string, unknown>;
+  if (v.outcome !== "success" && v.outcome !== "failure")
+    throw new AppError(400, "invalid_outcome", "请选择使用成功或失败");
+  if (v.reason !== undefined && !["expired", "incorrect", "other"].includes(v.reason as string))
+    throw new AppError(400, "invalid_reason", "请选择反馈原因");
+  if (v.note !== undefined && (typeof v.note !== "string" || v.note.length > 500))
+    throw new AppError(400, "invalid_note", "补充说明最多500字");
+  return {
+    outcome: v.outcome,
+    ...(v.outcome === "failure" ? {
+      reason: (v.reason ?? "other") as ReportReason,
+      note: (v.note as string | undefined)?.trim() ?? "",
+    } : {}),
+  };
 }
 export function validateRemaining(value: unknown): number {
   if (

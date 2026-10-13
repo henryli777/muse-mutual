@@ -1,4 +1,5 @@
 import type { InviteView } from "../domain.ts";
+import type { UsageFeedbackInput, RecordedUsageFeedback } from "./storage.ts";
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -59,3 +60,13 @@ export const claimApi = {
     await request("/api/claims/" + id, "PATCH", { action: "cancel" });
   },
 };
+export function submitUsageOutcome(
+  operationId: string,
+  feedback: UsageFeedbackInput,
+) {
+  return request<{ invite: InviteView; feedback: RecordedUsageFeedback }>(
+    "/api/claims/" + operationId + "/outcome",
+    "POST",
+    feedback,
+  );
+}

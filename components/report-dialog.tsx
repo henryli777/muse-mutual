@@ -3,21 +3,29 @@ import { useEffect, useRef, useState } from "react";
 import { X, Flag, Heart, ArrowUpRight } from "lucide-react";
 import { request } from "@/lib/client/api";
 import type { InviteView, ReportReason } from "@/lib/domain";
+import type { ConfirmedOperation, UsageFeedbackInput } from "@/lib/client/storage";
 import { support } from "./public-chrome";
 export default function ReportDialog({
   invite,
   onClose,
   onUpdate,
+  usageOperation,
+  onUsageFeedback,
 }: {
   invite: InviteView;
   onClose: () => void;
   onUpdate: (v: InviteView) => void;
+  usageOperation?: ConfirmedOperation;
+  onUsageFeedback?: (input: UsageFeedbackInput) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [reason, setReason] = useState<ReportReason>("expired"),
-    [note, setNote] = useState(""),
+  const [reason, setReason] = useState<ReportReason>(
+      usageOperation?.pendingFeedback?.reason ?? "expired",
+    ),
+    [note, setNote] = useState(usageOperation?.pendingFeedback?.note ?? ""),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
+  const immutable = !!usageOperation?.pendingFeedback;
   useEffect(() => {
     const previous = document.activeElement;
     dialog.current?.showModal();
@@ -27,8 +35,14 @@ export default function ReportDialog({
   }, []);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
     setBusy(true);
     try {
+      if (usageOperation && onUsageFeedback) {
+        await onUsageFeedback({ outcome: "failure", reason, note });
+        onClose();
+        return;
+      }
       const { invite: v } = await request<{ invite: InviteView }>(
         "/api/reports",
         "POST",
@@ -65,11 +79,22 @@ export default function ReportDialog({
       <div className="modal-icon">
         <Flag size={22} />
       </div>
-      <h2 id="report-title">这个邀请码遇到问题了吗？</h2>
-      <p>你的反馈会帮助下一位使用者。反馈会先标记为待核实。</p>
+      <h2 id="report-title">
+        {usageOperation
+          ? "在 MUSE 未能使用这个邀请码？"
+          : "这个邀请码遇到问题了吗？"}
+      </h2>
+      <p>
+        {usageOperation
+          ? "记录实际使用结果，帮助下一位使用者。问题会交由维护者核实，反馈不会再次扣减次数。"
+          : "你的反馈会帮助下一位使用者。反馈会先标记为待核实。"}
+      </p>
+      {immutable && (
+        <p>上次提交尚未确认，请重试相同的问题类型与说明。</p>
+      )}
       <div className="modal-code">{invite.code}</div>
       <form onSubmit={submit}>
-        <fieldset>
+        <fieldset disabled={busy || immutable}>
           <legend>问题类型</legend>
           {(
             [
@@ -98,6 +123,7 @@ export default function ReportDialog({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           maxLength={500}
+          disabled={busy || immutable}
           placeholder="例如：MUSE 提示邀请码不存在。请勿填写个人敏感信息。"
           rows={3}
         />
@@ -105,7 +131,7 @@ export default function ReportDialog({
           {message}
         </p>
         <button className="primary" disabled={busy}>
-          {busy ? "提交中…" : "提交反馈"}
+          {busy ? "提交中…" : immutable ? "重试这次反馈" : "提交反馈"}
         </button>
       </form>
     </dialog>

@@ -9,22 +9,44 @@ import {
   HeartHandshake,
 } from "lucide-react";
 import type { InviteView } from "@/lib/domain";
-import { ensureSession, request, claimApi } from "@/lib/client/api";
+import {
+  ensureSession,
+  request,
+  claimApi,
+  submitUsageOutcome,
+  ApiError,
+} from "@/lib/client/api";
 import type { Reservation } from "@/lib/client/api";
 import { copyInvite, retryPending } from "@/lib/client/copy-invite";
 import type { CopyResult, Pending } from "@/lib/client/copy-invite";
-import { storage, ownerTokens, pendingOperations } from "@/lib/client/storage";
+import {
+  storage,
+  ownerTokens,
+  pendingOperations,
+  confirmedOperations,
+  rememberConfirmedOperation,
+  queueUsageFeedback,
+  recordUsageFeedback,
+  expireConfirmedOperation,
+} from "@/lib/client/storage";
+import type { ConfirmedOperation, UsageFeedbackInput } from "@/lib/client/storage";
 import ShareForm from "./share-form";
 import InviteCard from "./invite-card";
 import ReportDialog from "./report-dialog";
+import UsageFeedback from "./usage-feedback";
 export default function InviteBoard() {
   const [invites, setInvites] = useState<InviteView[]>([]),
     [tokens, setTokens] = useState<Record<string, string>>({}),
     [filter, setFilter] = useState("available"),
     [sort, setSort] = useState("latest"),
     [loading, setLoading] = useState(true),
+    [checkedAt, setCheckedAt] = useState(0),
     [error, setError] = useState(""),
-    [report, setReport] = useState<InviteView | null>(null),
+    [report, setReport] = useState<{
+      invite: InviteView;
+      operation?: ConfirmedOperation;
+    } | null>(null),
+    [operations, setOperations] = useState<Record<string, ConfirmedOperation>>({}),
     [busy, setBusy] = useState<Record<string, boolean>>({}),
     [messages, setMessages] = useState<Record<string, string>>({}),
     [reservations, setReservations] = useState<Record<string, Reservation>>({}),
@@ -68,6 +90,31 @@ export default function InviteBoard() {
         setAvailableTotal(total);
         setNextOffset(next);
         setError("");
+        setLoading(false);
+        setCheckedAt(Date.now());
+      }
+      const recent = confirmedOperations();
+      if (id === fetchId.current) setOperations(recent);
+      const missing = Object.values(recent)
+        .sort((a, b) => b.confirmedAt.localeCompare(a.confirmedAt))
+        .slice(0, 20)
+        .filter((record) => !all.some((v) => v.id === record.inviteId));
+      if (missing.length) {
+        const results = await Promise.allSettled(
+          missing.map((record) =>
+            request<{ invite: InviteView }>("/api/invites/" + record.inviteId),
+          ),
+        );
+        if (id === fetchId.current) {
+          const recentInvites = results.flatMap((result) =>
+            result.status === "fulfilled" ? [result.value.invite] : [],
+          );
+          setInvites((current) => [
+            ...new Map(
+              [...recentInvites, ...current].map((v) => [v.id, v]),
+            ).values(),
+          ]);
+        }
       }
     } catch (e) {
       if (id === fetchId.current) setError((e as Error).message);
@@ -77,6 +124,10 @@ export default function InviteBoard() {
   }, [filter, sort]);
   function resultMessage(result: CopyResult, id: string) {
     if (result.invite) update(result.invite);
+    if (result.status === "confirmed" && result.operationId) {
+      const operation = rememberConfirmedOperation(id, result.operationId);
+      setOperations((v) => ({ ...v, [id]: operation }));
+    }
     const message =
       result.status === "confirmed"
         ? result.counted
@@ -121,6 +172,7 @@ export default function InviteBoard() {
     setNextOffset(null);
     setLoading(true);
     setTokens(ownerTokens());
+    setOperations(confirmedOperations());
     load().then(syncPending);
     const online = () => {
       syncPending().then(load);
@@ -131,11 +183,66 @@ export default function InviteBoard() {
       }
     }, 15000);
     window.addEventListener("online", online);
+    const changed = (event: StorageEvent) => {
+      if (event.key?.startsWith("muse:confirmed:")) {
+        storage.sync(event.key, event.newValue);
+        setOperations(confirmedOperations());
+      }
+    };
+    window.addEventListener("storage", changed);
     return () => {
       clearInterval(interval);
       window.removeEventListener("online", online);
+      window.removeEventListener("storage", changed);
     };
   }, [load]);
+  async function submitOutcome(
+    operation: ConfirmedOperation,
+    input: UsageFeedbackInput,
+  ) {
+    try {
+      const queued = queueUsageFeedback(operation, input);
+      setOperations((v) => ({ ...v, [operation.inviteId]: queued }));
+      setReport((current) =>
+        current?.operation?.operationId === operation.operationId
+          ? { ...current, operation: queued }
+          : current,
+      );
+      if (queued.feedback) return;
+      const result = await submitUsageOutcome(
+        queued.operationId,
+        queued.pendingFeedback!,
+      );
+      update(result.invite);
+      recordUsageFeedback(operation.inviteId, operation.operationId, result.feedback);
+      setOperations(confirmedOperations());
+      const message =
+        result.feedback.outcome === "success"
+          ? "使用成功反馈已记录，谢谢你帮助大家验证！"
+          : "未能使用的反馈已记录，将由维护者核实。谢谢你的提醒！";
+      setMessages((v) => ({ ...v, [operation.inviteId]: message }));
+      setAnnouncement(message);
+    } catch (e) {
+      if (
+        e instanceof ApiError &&
+        e.status >= 400 &&
+        e.status < 500 &&
+        e.status !== 429
+      ) {
+        expireConfirmedOperation(operation.inviteId, operation.operationId);
+        setReport((current) =>
+          current?.operation?.operationId === operation.operationId
+            ? null
+            : current,
+        );
+        const message = (e as Error).message;
+        setMessages((v) => ({ ...v, [operation.inviteId]: message }));
+        setAnnouncement(message);
+      }
+      setOperations(confirmedOperations());
+      throw e;
+    }
+  }
   async function copy(invite: InviteView) {
     if (busy[invite.id]) return;
     setBusy((v) => ({ ...v, [invite.id]: true }));
@@ -212,6 +319,47 @@ export default function InviteBoard() {
         (sort === "remaining" ? b.remaining - a.remaining : 0) ||
         b.createdAt.localeCompare(a.createdAt),
     );
+  const recentIds = Object.values(operations)
+    .sort((a, b) => b.confirmedAt.localeCompare(a.confirmedAt))
+    .slice(0, 20)
+    .map((v) => v.inviteId);
+  const recentShown = recentIds.flatMap((id) => {
+    const invite = invites.find((v) => v.id === id);
+    return invite && !shown.some((v) => v.id === id) ? [invite] : [];
+  });
+  function inviteCard(invite: InviteView) {
+    const operation = operations[invite.id];
+    return (
+      <InviteCard
+        key={invite.id}
+        invite={invite}
+        checkedAt={checkedAt}
+        ownerToken={tokens[invite.id]}
+        onUpdate={update}
+        onReport={() => setReport({ invite })}
+        onCopy={() => copy(invite)}
+        busy={!!busy[invite.id]}
+        message={messages[invite.id]}
+        copyLabel={
+          pending[invite.id]
+            ? "重试次数同步"
+            : reservations[invite.id]
+              ? "名额已预留，点击复制"
+              : undefined
+        }
+        usageFeedback={
+          operation && (
+            <UsageFeedback
+              key={operation.operationId}
+              operation={operation}
+              onSuccess={() => submitOutcome(operation, { outcome: "success" })}
+              onFailure={() => setReport({ invite, operation })}
+            />
+          )
+        }
+      />
+    );
+  }
   return (
     <>
       <ShareForm
@@ -296,6 +444,15 @@ export default function InviteBoard() {
             <button onClick={load}>重新加载</button>
           </div>
         )}
+        {recentShown.length > 0 && (
+          <section className="recent-claims" aria-labelledby="recent-title">
+            <h3 id="recent-title">你最近领取的</h3>
+            <p>
+              领取后 7 天内可反馈实际使用结果。已用完或不在当前分类中的邀请码仍会显示在这里。
+            </p>
+            <div className="invite-grid">{recentShown.map(inviteCard)}</div>
+          </section>
+        )}
         {loading && invites.length === 0 ? (
           <div className="empty-state">
             <RefreshCw className="spin" size={24} />
@@ -319,25 +476,7 @@ export default function InviteBoard() {
           </div>
         ) : (
           <div className="invite-grid">
-            {shown.map((invite) => (
-              <InviteCard
-                key={invite.id}
-                invite={invite}
-                ownerToken={tokens[invite.id]}
-                onUpdate={update}
-                onReport={() => setReport(invite)}
-                onCopy={() => copy(invite)}
-                busy={!!busy[invite.id]}
-                message={messages[invite.id]}
-                copyLabel={
-                  pending[invite.id]
-                    ? "重试次数同步"
-                    : reservations[invite.id]
-                      ? "名额已预留，点击复制"
-                      : undefined
-                }
-              />
-            ))}
+            {shown.map(inviteCard)}
           </div>
         )}
         {nextOffset !== null && (
@@ -382,7 +521,7 @@ export default function InviteBoard() {
             [
               "03",
               "让信息保持可靠",
-              "遇到错误或失效，留下反馈，让后来的朋友少走弯路。",
+              "实际使用后反馈成功或失败，让后来的朋友少走弯路。",
             ],
           ].map(([n, title, text]) => (
             <div key={n}>
@@ -399,8 +538,14 @@ export default function InviteBoard() {
       </section>
       {report && (
         <ReportDialog
-          key={report.id}
-          invite={report}
+          key={report.operation?.operationId ?? report.invite.id}
+          invite={report.invite}
+          usageOperation={report.operation}
+          onUsageFeedback={
+            report.operation
+              ? (input) => submitOutcome(report.operation!, input)
+              : undefined
+          }
           onClose={() => setReport(null)}
           onUpdate={(v) => {
             update(v);

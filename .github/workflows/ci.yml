@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -30,9 +31,58 @@ jobs:
         run: npm run install:ci
       - name: Test behavior
         run: npm test
+      - name: Test image deployment validation and rollback
+        run: node --test deploy/self-hosted/deploy-image.test.mjs
       - name: Check types
         run: npm run typecheck
       - name: Build production Worker
         run: npm run build
       - name: Build self-hosted production server
         run: npm run build:selfhost
+
+  release-image:
+    name: Build verified server image
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build Linux image after both verification jobs pass
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/self-hosted/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: muse-mutual:git-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Package image and exact source without runtime secrets
+        env:
+          RELEASE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p outputs/release-image
+          image="muse-mutual:git-$RELEASE_REVISION"
+          docker image save "$image" | gzip -1 > outputs/release-image/image.tar.gz
+          sha256sum outputs/release-image/image.tar.gz | cut -d ' ' -f 1 > outputs/release-image/image.tar.gz.sha256
+          printf '%s\n' "$RELEASE_REVISION" > outputs/release-image/revision.txt
+          printf '%s\n' "$image" > outputs/release-image/image-reference.txt
+          docker image inspect --format '{{.Id}}' "$image" > outputs/release-image/image-id.txt
+          docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image" > outputs/release-image/platform.txt
+          git archive --format=tar.gz --output=outputs/release-image/release-source.tar.gz "$RELEASE_REVISION"
+          sha256sum outputs/release-image/release-source.tar.gz | cut -d ' ' -f 1 > outputs/release-image/release-source.tar.gz.sha256
+      - name: Upload deployable image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: muse-linux-amd64-${{ github.sha }}
+          path: outputs/release-image/
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error

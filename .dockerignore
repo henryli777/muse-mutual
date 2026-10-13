@@ -28,3 +28,10 @@ coverage
 *.db
 *.db-*
 .DS_Store
+._*
+**/._*
+.playwright-cli
+secrets.env
+**/secrets.env
+deploy-image.env
+**/deploy-image.env
