@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { X, Flag } from "lucide-react";
+import { X, Flag, Heart, ArrowUpRight } from "lucide-react";
 import { request } from "@/lib/client/api";
 import type { InviteView, ReportReason } from "@/lib/domain";
+import { support } from "./public-chrome";
 export default function ReportDialog({
   invite,
   onClose,
@@ -51,9 +52,16 @@ export default function ReportDialog({
       }}
       aria-labelledby="report-title"
     >
-      <button className="close-button" onClick={onClose} aria-label="关闭反馈">
-        <X size={20} />
-      </button>
+      <nav className="modal-public-nav" aria-label="反馈页面导航">
+        <a className="support-link" href={support} target="_blank" rel="noopener noreferrer">
+          <Heart size={14} />
+          支持项目
+          <ArrowUpRight size={14} />
+        </a>
+        <button className="close-button" onClick={onClose} aria-label="关闭反馈">
+          <X size={20} />
+        </button>
+      </nav>
       <div className="modal-icon">
         <Flag size={22} />
       </div>

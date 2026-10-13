@@ -1,5 +1,5 @@
 import { ArrowUpRight, Heart } from "lucide-react";
-const support = "https://support.coinexo.top/";
+export const support = "https://support.coinexo.top/";
 export function PublicHeader() {
   return (
     <header className="site-header">

@@ -1007,10 +1007,12 @@ legend {
   white-space: nowrap;
 }
 .modal {
+  --modal-padding-block: 30px;
+  --modal-padding-inline: 30px;
   width: min(465px, calc(100% - 32px));
   border: 1px solid #e0e5d6;
   border-radius: 18px;
-  padding: 30px;
+  padding: var(--modal-padding-block) var(--modal-padding-inline);
   color: var(--ink);
   background: #fffefb;
   box-shadow: 0 25px 100px #18332433;
@@ -1018,6 +1020,26 @@ legend {
 .modal::backdrop {
   background: #20332570;
   backdrop-filter: blur(3px);
+}
+.modal-public-nav {
+  position: sticky;
+  top: calc(-1 * var(--modal-padding-block));
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: calc(-1 * var(--modal-padding-block)) calc(-1 * var(--modal-padding-inline)) 20px;
+  padding: 12px var(--modal-padding-inline);
+  background: #fffefb;
+  border-bottom: 1px solid var(--line);
+}
+.modal-public-nav .support-link {
+  margin-left: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.modal-public-nav .close-button {
+  position: static;
 }
 .modal h2 {
   font-size: 20px;
@@ -1546,7 +1568,8 @@ legend {
     letter-spacing: 0.09em;
   }
   .modal {
-    padding: 25px 22px;
+    --modal-padding-block: 25px;
+    --modal-padding-inline: 22px;
   }
   .modal h2 {
     font-size: 18px;
