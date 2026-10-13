@@ -114,13 +114,13 @@
 
 **Interfaces:** 使用注册得到且已持久化的 Sites project_id；同一个 Site 不重复创建。GitHub 远端命名 `github`，Sites 源码远端由官方 helper 管理，避免覆盖或混用凭据。
 
-- [ ] **Step 1: 完成独立审查，修复影响需求、安全、并发或浏览器可用性的发现。** 审查聚焦 Review Focus，不反复重跑已证明且输入未变的检查。
+- [x] **Step 1: 完成独立审查，修复影响需求、安全、并发或浏览器可用性的发现。** 审查聚焦 Review Focus，不反复重跑已证明且输入未变的检查。
 - [x] **Step 2: 完成中文 README、MIT许可证及 CI。** README 描述估算次数、重复复制规则、本设备修改限制、反馈机制、开发/测试/迁移/管理员配置和实际公开 URL；CI 用 Node22/24运行行为测试、类型检查及构建，不含秘密。当前地址标为预定，实际发布验证后更新上线状态。
-- [ ] **Step 3: 最终验证。** `npm test` 对应所有Node行为测试；`npx tsc --noEmit`；Sites build helper；本地真实 Worker 并发/API检查；桌面/手机浏览器检查。确认生产迁移只含schema，不含测试数据；`git diff --check`，检查追踪文件排除真实凭据及运行时数据。
-- [ ] **Step 4: 创建并推送 `henryli777/muse-mutual` 公开GitHub仓库。** 若该名字已存在先检查其身份与源码，不覆盖不相关项目。推送最终源码，更新工作区项目索引。
-- [ ] **Step 5: 使用 Sites helper 通过隐藏 stdin 传入会话凭据，推送匹配源码并打包。** 配置运行时秘密，按用户明确请求把访问模式设为public；如账户未提供public能力则报告限制，不把私有站声称为公开。
-- [ ] **Step 6: 保存对应源码版本并部署该版本，等待终态，保留真实 URL。** 公开站使用 `save_site_version` 后 `deploy_site_version`；不重复保存已成功版本。
-- [ ] **Step 7: 验证匿名访问首页成功，生产真实空状态、不写入测试记录；打开实际网站，交付公开网站和GitHub链接。** 若托管或匿名浏览验证失败，给出实际完成部分和可恢复阻塞，不声称公开发布成功。
+- [x] **Step 3: 最终验证。** `npm test` 对应所有Node行为测试；`npx tsc --noEmit`；Sites build helper；本地真实 Worker 并发/API检查；桌面/手机浏览器检查。确认生产迁移只含schema，不含测试数据；`git diff --check`，检查追踪文件排除真实凭据及运行时数据。
+- [x] **Step 4: 创建并推送 `henryli777/muse-mutual` 公开GitHub仓库。** 若该名字已存在先检查其身份与源码，不覆盖不相关项目。推送最终源码，更新工作区项目索引。
+- [x] **Step 5: 使用 Sites helper 通过隐藏 stdin 传入会话凭据，推送匹配源码并打包。** 配置运行时秘密，按用户明确请求把访问模式设为public；如账户未提供public能力则报告限制，不把私有站声称为公开。
+- [x] **Step 6: 保存对应源码版本并部署该版本，等待终态，保留真实 URL。** 公开站使用 `save_site_version` 后 `deploy_site_version`；不重复保存已成功版本。
+- [x] **Step 7: 验证匿名访问首页成功，生产真实空状态、不写入测试记录；打开实际网站，交付公开网站和GitHub链接。** 若托管或匿名浏览验证失败，给出实际完成部分和可恢复阻塞，不声称公开发布成功。
 
 ## Plan Self-review and Execution Handoff
 
@@ -128,4 +128,8 @@
 
 执行建议：**Native（由主代理直接实施，各阶段按计划验证，结束时独立审查）**。仓储和接口关联较紧，统一实施可减少交接；独立代理用于协议/审查等不共享编辑状态的任务。
 
-当前状态：用户已确认计划并选择 Native。Tasks 1–4 已实现并验证，Task 5 正在进行独立审查与公开发布。
+当前状态：五项任务已完成。独立审查发现已修复，36 项行为测试、类型检查、生产构建和 Node 22/24 CI 通过；公开网站与 GitHub 仓库已发布，匿名首页/API/错误页验证通过。
+
+发布网站：https://muse-mutual.blond-snail-7594.chatgpt.site
+
+公开源码：https://github.com/henryli777/muse-mutual
