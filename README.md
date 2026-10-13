@@ -2,7 +2,8 @@
 
 无需注册的 MUSE 邀请码分享网站。分享自己的邀请码和预计剩余次数，浏览最新分享，复制领取，反馈失效或错误；运营者可在维护入口核实反馈。
 
-- 网站：<https://muse-mutual.blond-snail-7594.chatgpt.site>
+- 正式域名：<https://muse.coinexo.top>
+- 原 Sites 地址：<https://muse-mutual.blond-snail-7594.chatgpt.site>（切换完成后跳转至正式域名）
 - 公开源码：<https://github.com/henryli777/muse-mutual>
 - [支持项目](https://support.coinexo.top/)
 
@@ -21,7 +22,7 @@
 
 ## 技术与结构
 
-使用 TypeScript、React、Vinext、Cloudflare Workers/D1 和 Drizzle 迁移。邀请码、预留、反馈与限流记录保存在服务器数据库；本浏览器仅保存提交管理凭据与待同步操作。首页适配手机和桌面，公开页面提供持续可见的「支持项目」入口。
+使用 TypeScript、React、Vinext 和 Drizzle 迁移。正式部署运行在 Node.js + 持久 SQLite，保留 Cloudflare Workers/D1 构建选项。邀请码、预留、反馈与限流记录保存在服务器数据库；本浏览器仅保存提交管理凭据与待同步操作。首页适配手机和桌面，公开页面提供持续可见的「支持项目」入口。
 
 - `app/`：页面和同源 API；`app/admin/` 为维护入口。
 - `components/`：分享表单、邀请码卡片、反馈弹窗与维护界面。
@@ -48,7 +49,7 @@ cp .env.example .dev.vars
 | `MUSE_SESSION_SECRET` | 签名匿名访客和管理员会话；缺失时业务 API 不提供服务。 |
 | `MUSE_ADMIN_TOKEN` | 维护入口登录凭据；缺失时无法登录审核。 |
 
-`.dev.vars` 已被 Git 忽略，仅供本地使用。不要把真实值写入 `.env.example`、托管清单或客户端代码。生产环境通过 Sites 的秘密配置单独设置。
+`.dev.vars` 已被 Git 忽略，仅供本地使用。不要把真实值写入 `.env.example`、托管清单或客户端代码。正式服务器通过 `/opt/muse-mutual/secrets.env` 注入秘密；Sites 构建使用其独立的秘密配置。
 
 新克隆需要先构建并初始化本地数据库：
 
@@ -86,15 +87,46 @@ node scripts/check-api.mjs http://127.0.0.1:5173
 
 一次反馈不会直接永久下架；已核实失效或余量为零时停止领取。恢复记录保留余量、本站领取次数和原提交时间。维护入口不展示捐款界面。
 
-## 部署与持续集成
+## 同服务器部署与持续集成
 
-本项目使用 Sites 托管，`.openai/hosting.json` 声明现有 Site ID 和 D1 的 `DB` 绑定；`r2` 未启用。部署更新应保留现有 Site ID。
+正式域名为 `muse.coinexo.top`，DNS A 记录源站为 `43.108.37.222`。使用现有服务器的 Nginx + Docker，容器仅监听服务器回环端口 `127.0.0.1:4326`，Nginx 提供 HTTPS。部署文件见 `deploy/self-hosted/`。
+
+- 应用版本：`/opt/muse-mutual/releases/<release>`，当前版本链接 `/opt/muse-mutual/current`。
+- 生产数据库：`/opt/muse-mutual/state/muse.sqlite`，WAL 持久卷在版本切换和重启后保留。
+- 私密配置：`/opt/muse-mutual/secrets.env`，仅包含运行时秘密，不打入镜像。管理员凭据与原站相同。
+- 数据库启动迁移：只执行未应用的结构迁移，记录校验和并拒绝改写已应用迁移。
+- 备份：`deploy/self-hosted/backup.sh` 使用 SQLite 一致快照并校验完整性，保存至持久卷的 `backups/`。`muse-backup.timer` 每天北京时间约03:15运行（随机延迟最多15分钟）；不会自动删除旧备份。
+
+构建、启动和检查：
+
+```sh
+cd /opt/muse-mutual/releases/<release>
+# 先准备 secrets.env，并将 state 目录权限设为1000:1000、0700。
+docker compose -f deploy/self-hosted/compose.yaml up --build -d --wait
+ln -sfn /opt/muse-mutual/releases/<release> /opt/muse-mutual/current
+curl -fsS https://muse.coinexo.top/api/invites?filter=all
+```
+
+首次配置使用 `nginx-http.conf`，执行 `nginx -t` 后重载；通过 `/var/www/letsencrypt` 签发证书，再使用 `nginx-https.conf`。普通HTTP请求重定向至HTTPS，ACME路径保持可达。Cloudflare代理可使用 Full (strict)；不要使用 Flexible。既有Certbot定时器负责续期。
+
+升级和回滚使用新的/旧的版本目录运行同一Compose命令，随后切换 `current`；共享数据库不会被替换。恢复数据库时先停止MUSE容器，备份当前数据库及WAL文件，再恢复经校验的备份，设置1000:1000、0600权限后重新启动。不要将本地测试数据库上传至生产。
+
+本地验证自托管构建：
+
+```sh
+npm run build:selfhost
+MUSE_DB_PATH=/absolute/path/to/local/muse.sqlite node --env-file=.dev.vars scripts/self-hosted.mjs start --port 5177 --hostname 127.0.0.1
+```
+
+### 保留的 Sites 构建
+
+Cloudflare 版本使用 Sites 托管，`.openai/hosting.json` 声明现有 Site ID 和 D1 的 `DB` 绑定；`r2` 未启用。部署更新应保留现有 Site ID。
 
 发布时先配置生产 `MUSE_SESSION_SECRET` 和 `MUSE_ADMIN_TOKEN` 为秘密值，确认公开访问模式，再按 Sites 的源码同步、打包、保存版本和部署流程执行。Sites 会在上传 Worker 前应用生产 D1 迁移。生产迁移与本地迁移相互独立，发布后需要验证匿名首页和 API 可访问。
 
 Sites 源码远端由其官方 helper 管理，公开 GitHub 仓库使用独立的 `github` remote。不要把源码写入凭据、运行时数据或本地秘密推送到任何远端。该应用需要持久数据库和服务端 API，不能直接作为纯静态 GitHub Pages 网站运行。
 
-GitHub Actions 在 Node.js 22、24 下执行锁定依赖安装、行为测试、类型检查与生产构建；CI 不需要生产秘密，也不修改生产数据库。
+GitHub Actions 在 Node.js 22、24 下执行锁定依赖安装、行为测试、类型检查，以及Worker和自托管两种生产构建；CI 不需要生产秘密，也不修改生产数据库。
 
 ## 设计与许可
 

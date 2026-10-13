@@ -1,0 +1,50 @@
+name: muse-mutual
+
+services:
+  muse:
+    image: muse-mutual:selfhost
+    container_name: muse-mutual
+    build:
+      context: ../..
+      dockerfile: deploy/self-hosted/Dockerfile
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    stop_grace_period: 30s
+    env_file:
+      - /opt/muse-mutual/secrets.env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      MUSE_DB_PATH: /data/muse.sqlite
+      VINEXT_TRUSTED_HOSTS: muse.coinexo.top
+    ports:
+      - "127.0.0.1:4326:3000"
+    volumes:
+      - /opt/muse-mutual/state:/data
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=64m,mode=1777
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/invites?filter=all', {headers: {Host: 'muse.coinexo.top'}}).then(r => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
