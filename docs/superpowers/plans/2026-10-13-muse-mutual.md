@@ -115,7 +115,7 @@
 **Interfaces:** 使用注册得到且已持久化的 Sites project_id；同一个 Site 不重复创建。GitHub 远端命名 `github`，Sites 源码远端由官方 helper 管理，避免覆盖或混用凭据。
 
 - [x] **Step 1: 完成独立审查，修复影响需求、安全、并发或浏览器可用性的发现。** 审查聚焦 Review Focus，不反复重跑已证明且输入未变的检查。
-- [x] **Step 2: 完成中文 README、MIT许可证及 CI。** README 描述估算次数、重复复制规则、本设备修改限制、反馈机制、开发/测试/迁移/管理员配置和实际公开 URL；CI 用 Node22/24运行行为测试、类型检查及构建，不含秘密。当前地址标为预定，实际发布验证后更新上线状态。
+- [x] **Step 2: 完成中文 README、MIT许可证及 CI。** README 描述估算次数、重复复制规则、本设备修改限制、反馈机制、开发/测试/迁移/管理员配置和实际公开 URL；CI 用 Node22/24运行行为测试、类型检查及构建，不含秘密。实际公开地址已验证。
 - [x] **Step 3: 最终验证。** `npm test` 对应所有Node行为测试；`npx tsc --noEmit`；Sites build helper；本地真实 Worker 并发/API检查；桌面/手机浏览器检查。确认生产迁移只含schema，不含测试数据；`git diff --check`，检查追踪文件排除真实凭据及运行时数据。
 - [x] **Step 4: 创建并推送 `henryli777/muse-mutual` 公开GitHub仓库。** 若该名字已存在先检查其身份与源码，不覆盖不相关项目。推送最终源码，更新工作区项目索引。
 - [x] **Step 5: 使用 Sites helper 通过隐藏 stdin 传入会话凭据，推送匹配源码并打包。** 配置运行时秘密，按用户明确请求把访问模式设为public；如账户未提供public能力则报告限制，不把私有站声称为公开。
