@@ -1,0 +1,13 @@
+"use client";
+import {useEffect,useState} from 'react';
+type Report={id:string;inviteId:string;code:string;nickname:string;remaining:number;reviewStatus:string;reason:string;note:string;createdAt:string};
+const reasons:Record<string,string>={expired:'已失效',incorrect:'邀请码错误',other:'其他问题'};
+async function api(path:string,method='GET',body?:unknown){const r=await fetch(path,{method,headers:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const v=await r.json() as Record<string,any>;if(!r.ok)throw new Error(v.error?.message??'操作失败');return v;}
+export default function AdminConsole(){
+ const [auth,setAuth]=useState(false),[token,setToken]=useState(''),[reports,setReports]=useState<Report[]>([]),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ async function load(){const v=await api('/api/admin/reports');setReports(v.reports);}
+ useEffect(()=>{api('/api/admin/session').then(()=>{setAuth(true);return load();}).catch(()=>{});},[]);
+ async function login(e:React.FormEvent){e.preventDefault();setBusy(true);setMessage('');try{await api('/api/admin/session','POST',{token});setToken('');setAuth(true);await load();}catch(e){setMessage((e as Error).message);}finally{setBusy(false);}}
+ async function review(id:string,action:string){setBusy(true);try{await api('/api/admin/invites/'+id,'PATCH',{action});await load();setMessage(action==='invalidate'?'已标记失效':'已恢复，原反馈已处理');}catch(e){setMessage((e as Error).message);}finally{setBusy(false);}}
+ return <section className="admin-console">{!auth?<form onSubmit={login}><label htmlFor="admin-token">管理凭据</label><input id="admin-token" type="password" value={token} onChange={e=>setToken(e.target.value)} required autoComplete="current-password"/><button className="primary" disabled={busy}>{busy?'登录中…':'登录维护入口'}</button></form>:<><div className="admin-toolbar"><button onClick={()=>load().catch(e=>setMessage(e.message))}>刷新反馈</button><button onClick={()=>api('/api/admin/session','DELETE').then(()=>setAuth(false)).catch(e=>setMessage(e.message))}>退出</button></div>{reports.length===0?<p className="empty">暂无待处理反馈。</p>:reports.map(r=><article className="report-row" key={r.id}><strong>{r.code}</strong><span>{r.nickname||'匿名分享者'} · {reasons[r.reason]} · {r.reviewStatus==='invalid'?'已失效':'待核实'}</span><p>{r.note||'未填写补充说明'}</p><time>{new Date(r.createdAt).toLocaleString()}</time><div><button disabled={busy} onClick={()=>review(r.inviteId,'invalidate')}>标记失效</button><button disabled={busy} onClick={()=>review(r.inviteId,'restore')}>恢复并处理反馈</button></div></article>)}</>}<p role="status" className="form-message">{message}</p></section>;
+}

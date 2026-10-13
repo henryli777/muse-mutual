@@ -10,3 +10,9 @@ const stored=await api('/api/invites?filter=all',owner);const invite=stored.body
 const denied=await api('/api/invites/'+id,cookies[1],'PATCH',{remaining:30},{'X-Owner-Token':'wrong'});assert.equal(denied.status,403);
 const edited=await api('/api/invites/'+id,owner,'PATCH',{remaining:2},{'X-Owner-Token':shared.body.ownerToken});assert.equal(edited.status,200);assert.equal(edited.body.invite.remaining,2);
 console.log('Local Worker API verified: 20 contenders, 1 reservation; 10 confirms, 1 decrement; owner authorization enforced.');
+
+const reported=await api('/api/reports',cookies[1],'POST',{inviteId:id,reason:'incorrect',note:'LOCAL-TEST private note'});assert.equal(reported.status,200);assert.equal(reported.body.invite.reviewStatus,'pending');assert.equal((await api('/api/admin/reports',owner)).status,401);
+const {readFileSync}=await import('node:fs');const token=readFileSync('.dev.vars','utf8').split('\n').find(v=>v.startsWith('MUSE_ADMIN_TOKEN=')).slice(17);const login=await fetch(origin+'/api/admin/session',{method:'POST',headers:{origin,cookie:owner,'content-type':'application/json'},body:JSON.stringify({token})});assert.equal(login.status,200);const admin=owner+'; '+login.headers.getSetCookie().map(v=>v.split(';')[0]).join('; ');
+const queue=await api('/api/admin/reports',admin);assert.equal(queue.status,200);assert.ok(queue.body.reports.some(v=>v.inviteId===id&&v.note==='LOCAL-TEST private note'));
+const invalid=await api('/api/admin/invites/'+id,admin,'PATCH',{action:'invalidate'});assert.equal(invalid.body.invite.reviewStatus,'invalid');const restored=await api('/api/admin/invites/'+id,admin,'PATCH',{action:'restore'});assert.equal(restored.body.invite.remaining,2);assert.equal(restored.body.invite.reportCount,0);
+console.log('Local moderation verified: pending feedback, private notes, anonymous denial, admin invalidation and restoration.');
