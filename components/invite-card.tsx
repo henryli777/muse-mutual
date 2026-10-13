@@ -117,7 +117,18 @@ export default function InviteCard({
       {invite.reportCount > 0 && (
         <p className="feedback-note">
           <Flag size={12} />
-          {invite.reportCount} 条问题反馈 · 待维护者核实
+          {invite.reportCount} 条问题反馈 ·{" "}
+          {invite.reportReasons
+            .map(
+              (reason) =>
+                ({
+                  expired: "已失效 / 次数用完",
+                  other: "其他问题",
+                  incorrect: "邀请码错误",
+                })[reason],
+            )
+            .join(" / ")}{" "}
+          · 待维护者核实
         </p>
       )}
       <button

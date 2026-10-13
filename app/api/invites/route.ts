@@ -2,18 +2,20 @@ import { handle } from "@/lib/server/route";
 import { json, readJson } from "@/lib/server/http";
 import { hash } from "@/lib/server/identity";
 import { rateLimit } from "@/lib/server/rate-limit";
-import { createInvite, listInvites } from "@/lib/server/invite-repository";
+import { createInvite, listInvitePage } from "@/lib/server/invite-repository";
 import { validateSubmission } from "@/lib/domain";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   return handle(request, async ({ db }) => {
     const p = new URL(request.url).searchParams;
-    return json({
-      invites: await listInvites(db, {
+    return json(
+      await listInvitePage(db, {
         sort: p.get("sort") ?? "latest",
         filter: p.get("filter") ?? "available",
+        limit: Number(p.get("limit") ?? 50),
+        offset: Number(p.get("offset") ?? 0),
       }),
-    });
+    );
   });
 }
 export async function POST(request: Request) {

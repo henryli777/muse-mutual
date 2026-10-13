@@ -80,6 +80,12 @@ export async function reserveClaim(
     )
     .bind(inviteId, visitorHash)
     .first<Op>();
+  if (recent?.status === "reserved")
+    throw new AppError(
+      409,
+      "claim_in_progress",
+      "这个邀请码已有复制操作进行中，请完成该操作后重试",
+    );
   if (recent) return reservation(recent);
   throw new AppError(409, "unavailable", "名额已被其他人预留，请稍后刷新");
 }

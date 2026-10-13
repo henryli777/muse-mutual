@@ -12,7 +12,7 @@
 }
 html {
   scroll-behavior: smooth;
-  scroll-padding-top: 32px;
+  scroll-padding-top: 100px;
 }
 body {
   margin: 0;
@@ -139,6 +139,9 @@ legend {
   font-weight: 550;
 }
 .site-header {
+  position: sticky;
+  top: 0;
+  z-index: 15;
   background: #fffefb;
   border-bottom: 1px solid var(--line);
 }
@@ -893,6 +896,39 @@ legend {
   background: #eef2e5;
   border-top: 1px solid #e1e7d7;
   margin-top: 20px;
+}
+.fallback-page {
+  max-width: 900px;
+  min-height: 65vh;
+  margin: auto;
+  padding: 100px 24px;
+}
+.fallback-page h1 {
+  font-size: clamp(25px, 4vw, 38px);
+  margin: 15px 0;
+}
+.fallback-page p {
+  color: var(--muted);
+}
+.fallback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 30px;
+}
+.board-announcement {
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: #edf3e6;
+  border-radius: 8px;
+}
+.load-more {
+  display: block;
+  margin: 20px auto;
+  padding: 10px 22px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffefb;
 }
 .footer-inner {
   max-width: 1160px;

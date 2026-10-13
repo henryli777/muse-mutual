@@ -6,6 +6,7 @@ import {
   listInvites,
   updateRemaining,
   getInvite,
+  listInvitePage,
 } from "../lib/server/invite-repository.ts";
 const input = { code: "AbC", nickname: "Lin", remaining: 30 };
 test("duplicate_code_keeps_original", async () => {
@@ -76,4 +77,43 @@ test("empty lists and exhausted filters reflect shared stored counts", async () 
   await createInvite(db, { ...input, remaining: 0 }, "o", now());
   assert.equal((await listInvites(db, { filter: "available" })).length, 0);
   assert.equal((await listInvites(db, { filter: "exhausted" })).length, 1);
+});
+test("server filtering reaches older available codes and pagination reaches beyond 200", async () => {
+  const { db, now, advance } = fixture();
+  const older = await createInvite(
+    db,
+    { ...input, code: "older-available" },
+    "o",
+    now(),
+  );
+  for (let i = 0; i < 205; i++) {
+    advance(1);
+    await createInvite(
+      db,
+      { code: "exhausted-" + i, nickname: "", remaining: 0 },
+      "o",
+      now(),
+    );
+  }
+  const available = await listInvitePage(db, {
+    filter: "available",
+    limit: 50,
+  });
+  assert.deepEqual(
+    available.invites.map((v) => v.id),
+    [older.id],
+  );
+  assert.equal(available.availableTotal, 1);
+  assert.equal(available.total, 1);
+  assert.equal(available.nextOffset, null);
+  const last = await listInvitePage(db, {
+    filter: "all",
+    limit: 50,
+    offset: 200,
+  });
+  assert.equal(last.invites.length, 6);
+  assert.equal(last.invites.at(-1)?.id, older.id);
+  assert.equal(last.total, 206);
+  const first = await listInvitePage(db, { filter: "all", limit: 50 });
+  assert.equal(first.nextOffset, 50);
 });

@@ -6,6 +6,31 @@ import type {
   ReviewStatus,
 } from "../domain.ts";
 type Row = Record<string, any>;
+const CONDITIONS: Record<string, string> = {
+  available: "i.remaining>0 AND i.review_status!='invalid'",
+  pending: "i.review_status='pending'",
+  exhausted: "i.remaining=0",
+  all: "1=1",
+};
+type ListOptions = {
+  sort?: string;
+  filter?: string;
+  limit?: number;
+  offset?: number;
+};
+function pageBounds(options: ListOptions) {
+  const limit = Number.isFinite(options.limit) ? options.limit! : 50;
+  const offset = Number.isFinite(options.offset) ? options.offset! : 0;
+  return {
+    limit: Math.max(1, Math.min(200, Math.trunc(limit))),
+    offset: Math.max(0, Math.trunc(offset)),
+  };
+}
+function filterCondition(filter?: string) {
+  return Object.hasOwn(CONDITIONS, filter ?? "available")
+    ? CONDITIONS[filter ?? "available"]
+    : CONDITIONS.available;
+}
 export const ACTIVE = `(SELECT count(*) FROM claims c WHERE c.invite_id=i.id AND c.status='reserved' AND c.copy_revision=i.copy_revision AND c.expires_at>unixepoch('now'))`;
 const SELECT = `SELECT i.id,i.code,i.nickname,i.remaining,i.copied_count,i.created_at,i.updated_at,i.review_status,
  i.remaining-${ACTIVE} AS available,
@@ -79,28 +104,48 @@ export async function createInvite(
 }
 export async function listInvites(
   db: D1Database,
-  options: { sort?: string; filter?: string; limit?: number } = {},
+  options: ListOptions = {},
 ): Promise<InviteView[]> {
-  const conditions: { [k: string]: string } = {
-    available: "i.remaining>0 AND i.review_status!='invalid'",
-    pending: "i.review_status='pending'",
-    exhausted: "i.remaining=0",
-    all: "1=1",
-  };
-  const filter =
-    conditions[options.filter ?? "available"] ?? conditions.available;
+  const filter = filterCondition(options.filter);
   const order =
     options.sort === "remaining"
-      ? "i.remaining DESC,i.created_at DESC"
+      ? "CASE WHEN i.review_status='normal' THEN 0 ELSE 1 END,i.remaining DESC,i.created_at DESC"
       : "CASE WHEN i.review_status='normal' THEN 0 ELSE 1 END,i.created_at DESC";
-  const limit = Math.max(1, Math.min(200, Math.trunc(options.limit ?? 200)));
+  const { limit, offset } = pageBounds(options);
   const { results } = await db
     .prepare(
-      SELECT + " WHERE " + filter + " ORDER BY " + order + ",i.id DESC LIMIT ?",
+      SELECT +
+        " WHERE " +
+        filter +
+        " ORDER BY " +
+        order +
+        ",i.id DESC LIMIT ? OFFSET ?",
     )
-    .bind(limit)
+    .bind(limit, offset)
     .all<Row>();
   return results.map(view);
+}
+export async function listInvitePage(
+  db: D1Database,
+  options: ListOptions = {},
+) {
+  const filter = filterCondition(options.filter);
+  const invites = await listInvites(db, options);
+  const totals = await db
+    .prepare(
+      `SELECT
+    (SELECT count(*) FROM invites i WHERE ${filter}) AS total,
+    (SELECT count(*) FROM invites i WHERE ${CONDITIONS.available}) AS available_total`,
+    )
+    .first<Row>();
+  const { limit, offset } = pageBounds(options);
+  const total = Number(totals?.total ?? 0);
+  return {
+    invites,
+    total,
+    availableTotal: Number(totals?.available_total ?? 0),
+    nextOffset: offset + limit < total ? offset + limit : null,
+  };
 }
 export async function updateRemaining(
   db: D1Database,

@@ -28,8 +28,12 @@ export default function InviteBoard() {
     [busy, setBusy] = useState<Record<string, boolean>>({}),
     [messages, setMessages] = useState<Record<string, string>>({}),
     [reservations, setReservations] = useState<Record<string, Reservation>>({}),
-    [pending, setPending] = useState<Record<string, Pending>>({});
+    [pending, setPending] = useState<Record<string, Pending>>({}),
+    [availableTotal, setAvailableTotal] = useState(0),
+    [nextOffset, setNextOffset] = useState<number | null>(null),
+    [announcement, setAnnouncement] = useState("");
   const fetchId = useRef(0),
+    pageCount = useRef(1),
     syncing = useRef(false);
   const update = useCallback(
     (v: InviteView) =>
@@ -44,29 +48,51 @@ export default function InviteBoard() {
     const id = ++fetchId.current;
     try {
       await ensureSession();
-      const v = await request<{ invites: InviteView[] }>(
-        "/api/invites?filter=all",
-      );
+      let all: InviteView[] = [];
+      let next: number | null = 0;
+      let total = 0;
+      for (let page = 0; page < pageCount.current && next !== null; page++) {
+        const v: {
+          invites: InviteView[];
+          availableTotal: number;
+          nextOffset: number | null;
+        } = await request(
+          `/api/invites?filter=${filter}&sort=${sort}&limit=50&offset=${next}`,
+        );
+        all = [...all, ...v.invites];
+        next = v.nextOffset;
+        total = v.availableTotal;
+      }
       if (id === fetchId.current) {
-        setInvites(v.invites);
+        setInvites([...new Map(all.map((v) => [v.id, v])).values()]);
+        setAvailableTotal(total);
+        setNextOffset(next);
         setError("");
       }
     } catch (e) {
-      setError((e as Error).message);
+      if (id === fetchId.current) setError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (id === fetchId.current) setLoading(false);
     }
-  }, []);
+  }, [filter, sort]);
   function resultMessage(result: CopyResult, id: string) {
     if (result.invite) update(result.invite);
+    const message =
+      result.status === "confirmed"
+        ? result.counted
+          ? "已复制！预计剩余 " + result.invite?.remaining + " 次"
+          : "已复制。10 分钟内重复领取不再扣次数"
+        : (result.message ?? "复制未完成");
+    setAnnouncement(message);
+    if (
+      result.status === "confirmed" &&
+      result.counted &&
+      result.invite?.remaining === 0
+    )
+      setAvailableTotal((v) => Math.max(0, v - 1));
     setMessages((v) => ({
       ...v,
-      [id]:
-        result.status === "confirmed"
-          ? result.counted
-            ? "已复制！预计剩余 " + result.invite?.remaining + " 次"
-            : "已复制。10 分钟内重复领取不再扣次数"
-          : (result.message ?? "复制未完成"),
+      [id]: message,
     }));
     if (result.status === "pending" && result.pending)
       setPending((v) => ({ ...v, [id]: result.pending! }));
@@ -90,6 +116,10 @@ export default function InviteBoard() {
     }
   }
   useEffect(() => {
+    pageCount.current = 1;
+    setInvites([]);
+    setNextOffset(null);
+    setLoading(true);
     setTokens(ownerTokens());
     load().then(syncPending);
     const online = () => {
@@ -201,14 +231,7 @@ export default function InviteBoard() {
             <span className="eyebrow">THE SHARING BOARD</span>
             <h2 id="board-title">
               邀请码广场
-              <span className="count-pill">
-                {
-                  invites.filter(
-                    (i) => i.remaining > 0 && i.reviewStatus !== "invalid",
-                  ).length
-                }{" "}
-                个可领取
-              </span>
+              <span className="count-pill">{availableTotal} 个可领取</span>
             </h2>
             <p>挑选一个邀请码，复制后前往 MUSE 粘贴使用。</p>
           </div>
@@ -260,6 +283,13 @@ export default function InviteBoard() {
             </button>
           </div>
         </div>
+        <p
+          className={announcement ? "board-announcement" : "sr-only"}
+          role="status"
+          aria-live="polite"
+        >
+          {announcement}
+        </p>
         {error && (
           <div className="error-banner" role="alert">
             {error}
@@ -277,7 +307,7 @@ export default function InviteBoard() {
               <Gift size={30} />
             </div>
             <h3>
-              {invites.length === 0
+              {filter === "all" && invites.length === 0
                 ? "还没有邀请码，成为第一位分享者。"
                 : "这个分类暂时没有邀请码。"}
             </h3>
@@ -309,6 +339,19 @@ export default function InviteBoard() {
               />
             ))}
           </div>
+        )}
+        {nextOffset !== null && (
+          <button
+            className="load-more"
+            disabled={loading}
+            onClick={() => {
+              pageCount.current += 1;
+              setLoading(true);
+              load();
+            }}
+          >
+            {loading ? "正在加载…" : "加载更多邀请码"}
+          </button>
         )}
         <div className="board-footnote">
           <ShieldCheck size={15} />

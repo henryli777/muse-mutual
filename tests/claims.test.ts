@@ -104,15 +104,17 @@ test("same_visitor_ten_minutes_no_second_debit", async () => {
     visitorHash: "v",
   });
   await confirmClaim(db, a, "v");
+  advance(599);
   const b = await reserveClaim(db, {
     inviteId: invite.id,
     operationId: op(),
     visitorHash: "v",
   });
+  assert.equal(b.operationId, a);
   assert.equal(b.alreadyCounted, true);
-  await confirmClaim(db, b.operationId, "v");
+  assert.equal((await confirmClaim(db, b.operationId, "v")).counted, false);
   assert.equal((await getInvite(db, invite.id)).remaining, 2);
-  advance(601);
+  advance(2);
   const c = await reserveClaim(db, {
     inviteId: invite.id,
     operationId: op(),
@@ -160,9 +162,9 @@ test("invalidate_during_reservation_blocks_confirmation even after restore", asy
   await assert.rejects(() => confirmClaim(db, id, "v"), /失效|过期/);
   assert.equal((await getInvite(db, invite.id)).remaining, 3);
 });
-test("cross_tab_duplicate_does_not_hold_two_slots and owner cannot undercut", async () => {
+test("cross_tab_independent_operations_have_one_reservation and owner cannot undercut", async () => {
   const { db, invite } = await setup();
-  const r = await Promise.all(
+  const r = await Promise.allSettled(
     Array.from({ length: 2 }, () =>
       reserveClaim(db, {
         inviteId: invite.id,
@@ -171,12 +173,49 @@ test("cross_tab_duplicate_does_not_hold_two_slots and owner cannot undercut", as
       }),
     ),
   );
-  assert.equal(r[0].operationId, r[1].operationId);
+  assert.equal(r.filter((result) => result.status === "fulfilled").length, 1);
+  const blocked = r.find((result) => result.status === "rejected");
+  assert.ok(blocked?.status === "rejected");
+  assert.equal(blocked.reason.status, 409);
+  assert.equal(blocked.reason.code, "claim_in_progress");
   assert.equal((await getInvite(db, invite.id)).available, 2);
   await assert.rejects(
     () => updateRemaining(db, invite.id, "owner", 0, 1800000000),
     /预留/,
   );
+});
+test("cancelling one tab cannot cancel another tab's successful copy", async () => {
+  const { db, invite } = await setup();
+  const first = op(),
+    second = op();
+  await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: first,
+    visitorHash: "same-browser",
+  });
+  await assert.rejects(
+    () =>
+      reserveClaim(db, {
+        inviteId: invite.id,
+        operationId: second,
+        visitorHash: "same-browser",
+      }),
+    { status: 409, code: "claim_in_progress" },
+  );
+  await cancelClaim(db, first, "same-browser");
+  const next = await reserveClaim(db, {
+    inviteId: invite.id,
+    operationId: second,
+    visitorHash: "same-browser",
+  });
+  assert.equal(next.operationId, second);
+  assert.equal(next.alreadyCounted, false);
+  await cancelClaim(db, first, "same-browser");
+  await confirmClaim(db, second, "same-browser");
+  await assert.rejects(() => confirmClaim(db, first, "same-browser"), /取消/);
+  const result = await getInvite(db, invite.id);
+  assert.equal(result.remaining, 2);
+  assert.equal(result.copiedCount, 1);
 });
 test("same operation never extends its expiration", async () => {
   const { db, invite, advance } = await setup();
