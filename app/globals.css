@@ -649,6 +649,16 @@ legend {
   color: #6a8d51;
   white-space: nowrap;
 }
+.card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.status-badge.pinned {
+  background: #e4eee9;
+  color: #245e4c;
+}
 .status-badge.pending,
 .status-badge.low {
   background: #f8efd5;

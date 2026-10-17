@@ -26,12 +26,14 @@ export const invites = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
     reviewStatus: text("review_status").notNull().default("normal"),
     copyRevision: integer("copy_revision").notNull().default(0),
+    pinned: integer("pinned").notNull().default(0),
   },
   (t) => [
     uniqueIndex("invites_code_unique").on(t.code),
     index("invites_created").on(t.createdAt),
     check("remaining_bounds", sql`${t.remaining} BETWEEN 0 AND 30`),
     check("initial_bounds", sql`${t.initialRemaining} BETWEEN 0 AND 30`),
+    check("pinned_boolean", sql`${t.pinned} IN (0,1)`),
     check(
       "review_states",
       sql`${t.reviewStatus} IN ('normal','pending','invalid')`,

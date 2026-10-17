@@ -25,6 +25,17 @@ export interface InviteView {
   lastVerifiedAt: string | null;
   successCount: number;
   failureCount: number;
+  pinned: boolean;
+}
+export function compareInvites(
+  a: Pick<InviteView, "pinned" | "reviewStatus" | "remaining" | "createdAt">,
+  b: Pick<InviteView, "pinned" | "reviewStatus" | "remaining" | "createdAt">,
+  sort: string,
+): number {
+  return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+    (a.reviewStatus === "pending" ? 1 : 0) - (b.reviewStatus === "pending" ? 1 : 0) ||
+    (sort === "remaining" ? b.remaining - a.remaining : 0) ||
+    b.createdAt.localeCompare(a.createdAt);
 }
 export interface Submission {
   code: string;

@@ -94,3 +94,53 @@ test("usage migration upgrades an existing database and keeps feedback across re
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("pin migration preserves linked legacy records and operator pins across restarts", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "muse-pin-upgrade-"));
+  const filename = path.join(root, "muse.sqlite");
+  const migrations = path.join(root, "migrations");
+  mkdirSync(migrations);
+  const previous = readdirSync("drizzle")
+    .filter((name) => /^000[01]_.*\.sql$/.test(name));
+  for (const name of previous)
+    copyFileSync(path.join("drizzle", name), path.join(migrations, name));
+  try {
+    migrateDatabase(filename, migrations);
+    const legacy = new DatabaseSync(filename);
+    legacy.exec("PRAGMA foreign_keys=ON");
+    legacy.prepare("INSERT INTO invites(id,code,initial_remaining,remaining,owner_hash,created_at,updated_at) VALUES('legacy','existing-code',30,29,'owner',100,100)").run();
+    legacy.prepare("INSERT INTO claims VALUES('claim','legacy','visitor',0,'confirmed',100,190,101)").run();
+    legacy.prepare("INSERT INTO reports VALUES('report','legacy','reporter','incorrect','retained',100,0)").run();
+    legacy.prepare("INSERT INTO usage_feedback VALUES('feedback','claim','legacy',0,'success',101)").run();
+    legacy.close();
+    for (const name of readdirSync("drizzle").filter((name) => name.endsWith(".sql") && !previous.includes(name)))
+      copyFileSync(path.join("drizzle", name), path.join(migrations, name));
+    migrateDatabase(filename, migrations);
+    const upgraded = openSqliteD1(filename);
+    try {
+      const old = await getInvite(upgraded.db, "legacy");
+      assert.equal(old.pinned, false);
+      assert.equal(old.remaining, 29);
+      assert.equal(old.successCount, 1);
+      assert.equal(old.reportCount, 1);
+      await upgraded.db.prepare("UPDATE invites SET pinned=1 WHERE id='legacy'").run();
+    } finally {
+      upgraded.close();
+    }
+    migrateDatabase(filename, migrations);
+    const restarted = openSqliteD1(filename);
+    try {
+      const saved = await getInvite(restarted.db, "legacy");
+      assert.equal(saved.pinned, true);
+      assert.equal(saved.code, "existing-code");
+      assert.equal(saved.successCount, 1);
+      assert.equal(saved.reportCount, 1);
+      const violations = await restarted.db.prepare("PRAGMA foreign_key_check").all();
+      assert.deepEqual(violations.results, []);
+    } finally {
+      restarted.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

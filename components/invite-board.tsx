@@ -9,6 +9,7 @@ import {
   HeartHandshake,
 } from "lucide-react";
 import type { InviteView } from "@/lib/domain";
+import { compareInvites } from "@/lib/domain";
 import {
   ensureSession,
   request,
@@ -312,13 +313,7 @@ export default function InviteBoard() {
             ? i.reviewStatus === "pending"
             : i.remaining === 0),
     )
-    .sort(
-      (a, b) =>
-        (a.reviewStatus === "pending" ? 1 : 0) -
-          (b.reviewStatus === "pending" ? 1 : 0) ||
-        (sort === "remaining" ? b.remaining - a.remaining : 0) ||
-        b.createdAt.localeCompare(a.createdAt),
-    );
+    .sort((a, b) => compareInvites(a, b, sort));
   const recentIds = Object.values(operations)
     .sort((a, b) => b.confirmedAt.localeCompare(a.confirmedAt))
     .slice(0, 20)

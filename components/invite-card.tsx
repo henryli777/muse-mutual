@@ -10,6 +10,7 @@ import {
   MinusCircle,
   Pencil,
   LoaderCircle,
+  Pin,
 } from "lucide-react";
 import { inviteStatus } from "@/lib/domain";
 import type { InviteView } from "@/lib/domain";
@@ -78,10 +79,13 @@ export default function InviteCard({
           </span>
           {invite.nickname || "匿名分享者"}
         </span>
-        <span className={"status-badge " + state}>
-          <Icon size={12} />
-          {label}
-        </span>
+        <div className="card-badges">
+          {invite.pinned && <span className="status-badge pinned"><Pin size={12} />置顶</span>}
+          <span className={"status-badge " + state}>
+            <Icon size={12} />
+            {label}
+          </span>
+        </div>
       </div>
       <div className="code-box">
         <span className="code-label">MUSE INVITE CODE</span>

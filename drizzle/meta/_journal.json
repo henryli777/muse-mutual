@@ -15,6 +15,13 @@
       "when": 1791864620209,
       "tag": "0001_special_doctor_doom",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792244877309,
+      "tag": "0002_broken_blob",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import {
   validateSubmission,
   validateRemaining,
   inviteStatus,
+  compareInvites,
 } from "../lib/domain.ts";
 
 test("submission uses 30 by default and preserves the code case", () => {
@@ -48,4 +49,12 @@ test("count and moderation statuses preserve exhaustion priority", () => {
     inviteStatus({ remaining: 12, reviewStatus: "invalid" }),
     "invalid",
   );
+});
+test("client ordering keeps an older pinned invite ahead of newer and higher-quota invites", () => {
+  const oldPinned = { pinned: true, reviewStatus: "normal" as const, remaining: 1, createdAt: "2026-10-13T00:00:00Z" };
+  const recent = { pinned: false, reviewStatus: "normal" as const, remaining: 30, createdAt: "2026-10-17T00:00:00Z" };
+  for (const sort of ["latest", "remaining"]) {
+    assert.deepEqual([recent, oldPinned].sort((a, b) => compareInvites(a, b, sort)), [oldPinned, recent]);
+    assert.ok(compareInvites({ ...oldPinned, pinned: false }, recent, sort) > 0);
+  }
 });

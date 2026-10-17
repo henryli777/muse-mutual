@@ -32,7 +32,7 @@ function filterCondition(filter?: string) {
     : CONDITIONS.available;
 }
 export const ACTIVE = `(SELECT count(*) FROM claims c WHERE c.invite_id=i.id AND c.status='reserved' AND c.copy_revision=i.copy_revision AND c.expires_at>unixepoch('now'))`;
-const SELECT = `SELECT i.id,i.code,i.nickname,i.remaining,i.copied_count,i.created_at,i.updated_at,i.review_status,
+const SELECT = `SELECT i.id,i.code,i.nickname,i.remaining,i.copied_count,i.created_at,i.updated_at,i.review_status,i.pinned,
  i.remaining-${ACTIVE} AS available,
  (SELECT count(*) FROM reports r WHERE r.invite_id=i.id AND r.resolved=0) AS report_count,
  (SELECT group_concat(DISTINCT reason) FROM reports r WHERE r.invite_id=i.id AND r.resolved=0) AS report_reasons,
@@ -50,6 +50,7 @@ function view(r: Row): InviteView {
     createdAt: new Date(r.created_at * 1000).toISOString(),
     updatedAt: new Date(r.updated_at * 1000).toISOString(),
     reviewStatus: r.review_status as ReviewStatus,
+    pinned: r.pinned === 1,
     reportCount: r.report_count,
     reportReasons: r.report_reasons
       ? (r.report_reasons.split(",") as ReportReason[])
@@ -115,8 +116,8 @@ export async function listInvites(
   const filter = filterCondition(options.filter);
   const order =
     options.sort === "remaining"
-      ? "CASE WHEN i.review_status='normal' THEN 0 ELSE 1 END,i.remaining DESC,i.created_at DESC"
-      : "CASE WHEN i.review_status='normal' THEN 0 ELSE 1 END,i.created_at DESC";
+      ? "i.pinned DESC,CASE WHEN i.review_status='normal' THEN 0 ELSE 1 END,i.remaining DESC,i.created_at DESC"
+      : "i.pinned DESC,CASE WHEN i.review_status='normal' THEN 0 ELSE 1 END,i.created_at DESC";
   const { limit, offset } = pageBounds(options);
   const { results } = await db
     .prepare(
